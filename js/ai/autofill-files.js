@@ -263,7 +263,7 @@ function updGo() {
     !(
       tryJson(rq.value) ||
       FILES.some((f) => f.kind === "image") ||
-      (sample && (rq.value.trim() || FILES.length))
+      (sample.autofill && (rq.value.trim() || FILES.length))
     );
 }
 async function copyText(t) {

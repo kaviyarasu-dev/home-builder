@@ -309,7 +309,7 @@ function show() {
     ? "Copy and Enhance are off until this is fixed: " + V.B.join(" ")
     : "";
   document.getElementById("cp").disabled = BLK;
-  en.disabled = ctl ? false : !sample || BLK;
+  en.disabled = ctl ? false : !sample.enhance || BLK;
   out.textContent = enh ? enh.text : base.text;
   un.style.display = enh ? "" : "none";
   document.getElementById("ch").textContent =

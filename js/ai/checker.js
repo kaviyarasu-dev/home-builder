@@ -152,7 +152,7 @@ async function runCk() {
     ckCtl.abort();
     return;
   }
-  if (!sample) {
+  if (!sample.checker) {
     ckMsg(
       platformSample
         ? "Claude access is not available in this view, so the check cannot run."
@@ -167,7 +167,7 @@ async function runCk() {
   ckGo.textContent = "⏹ Stop";
   ckMsg("Claude is checking your values… (up to a minute)");
   try {
-    const r = await sample.json(ckPrompt(), {
+    const r = await sample.checker.json(ckPrompt(), {
       modelTier: "default",
       cache: false,
       signal: c.signal,
@@ -215,7 +215,7 @@ async function runCk() {
         "capability_removed",
       ].includes(k)
     ) {
-      sample = null;
+      sample.checker = null;
       en.disabled = true;
       ckMsg(
         "Claude access was not granted, so this check is off. Reload and allow it.",

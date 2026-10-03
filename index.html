@@ -17,28 +17,83 @@
             tailor it
             to your plot. Answers are saved in this browser only.</p>
         <div class="bar"><button class="p" id="rd">🔄 Reset all to default values</button><button id="ks-open"
-                style="display:none">🔑 Claude API key</button><span id="rd-st"
+                style="display:none">🔑 AI API key</button><span id="rd-st"
                 style="font-size:12px;color:var(--mu)"></span>
         </div>
         <div class="mo" id="ks" role="dialog" aria-modal="true" aria-labelledby="ks-t">
             <div class="mb">
                 <div class="hd">
-                    <h2 id="ks-t">🔑 Claude API key</h2><button id="ks-x" aria-label="Close">✕</button>
+                    <h2 id="ks-t">🔑 AI API key</h2><button id="ks-x" aria-label="Close">✕</button>
                 </div>
-                <p class="sub" style="margin-bottom:10px">Needed only when this file is opened outside Claude.
+                <p class="sub" style="margin-bottom:10px">Needed only when this file is opened locally.
                     Auto-fill,
-                    Enhance and Check values with AI call Claude with <b>your own</b> API key (console.anthropic.com).
+                    Enhance and Check values with AI call your selected provider with <b>your own</b> API key.
                     The key is
-                    saved only in this browser and is sent only to api.anthropic.com. Use a key with a low spend limit,
+                    saved only in this browser and is sent directly to the selected provider's API. Use a key with a low
+                    spend limit,
                     and never
                     share a file that has your key typed in.</p>
-                <div class="g">
-                    <div class="f"><label>API key</label><input id="ak" type="password" autocomplete="off"
-                            placeholder="sk-ant-..."></div>
-                    <div class="f"><label>Model</label><input id="am" type="text" autocomplete="off"></div>
+                <h3 style="margin: 15px 0 10px; font-size: 14px; border-bottom: 1px solid var(--ln); padding-bottom: 5px;">API Keys</h3>
+                <div class="g" style="grid-template-columns: 1fr;">
+                    <div class="f">
+                        <label>Claude API key</label>
+                        <div style="display:flex;gap:8px">
+                            <input id="ak-ant" type="password" autocomplete="off" placeholder="sk-ant-..." style="flex:1">
+                            <button class="p" id="ak-save-ant">Save</button>
+                            <button id="ak-del-ant">🗑 Remove</button>
+                        </div>
+                    </div>
+                    <div class="f">
+                        <label>OpenAI API key</label>
+                        <div style="display:flex;gap:8px">
+                            <input id="ak-ope" type="password" autocomplete="off" placeholder="sk-proj-..." style="flex:1">
+                            <button class="p" id="ak-save-ope">Save</button>
+                            <button id="ak-del-ope">🗑 Remove</button>
+                        </div>
+                    </div>
                 </div>
-                <div class="bar" style="margin:10px 0 0"><button class="p" id="ak-save">💾 Save key</button><button
-                        id="ak-del">🗑 Remove key</button><span id="ak-st"></span></div>
+
+                <h3 style="margin: 15px 0 10px; font-size: 14px; border-bottom: 1px solid var(--ln); padding-bottom: 5px;">Feature Settings</h3>
+                <div class="g">
+                    <div class="f"><label>Auto-fill AI</label>
+                        <div style="display:flex;gap:4px">
+                            <select id="prov-af" style="width:40%">
+                                <option value="anthropic">Claude</option>
+                                <option value="openai">OpenAI</option>
+                            </select>
+                            <select id="mod-af" style="flex:1"></select>
+                        </div>
+                    </div>
+                    <div class="f"><label>Checker AI</label>
+                         <div style="display:flex;gap:4px">
+                            <select id="prov-ck" style="width:40%">
+                                <option value="anthropic">Claude</option>
+                                <option value="openai">OpenAI</option>
+                            </select>
+                            <select id="mod-ck" style="flex:1"></select>
+                        </div>
+                    </div>
+                    <div class="f" style="grid-column: 1 / -1;"><label>Enhance AI</label>
+                        <div style="display:flex;gap:4px">
+                            <select id="prov-en" style="width:40%">
+                                <option value="anthropic">Claude</option>
+                                <option value="openai">OpenAI</option>
+                            </select>
+                            <select id="mod-en" style="flex:1"></select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bar" style="margin:10px 0 0"><span id="ak-st"></span></div>
+            </div>
+        </div>
+        <div class="mo" id="prompt-modal" role="dialog" aria-modal="true" aria-labelledby="pm-t">
+            <div class="mb" style="max-width: 800px; width: 95%; max-height: 90vh; overflow-y: auto;">
+                <div class="hd">
+                    <h2 id="pm-t">📝 Your prompt</h2><button id="pm-x" aria-label="Close">✕</button>
+                </div>
+                <div id="out"></div>
+                <div id="ch"></div>
             </div>
         </div>
         <section class="card af" id="af">
@@ -86,7 +141,7 @@
         </section>
         <section class="card" id="pr">
             <h2>Your prompt</h2>
-            <div class="bar"><button class="p" id="cp">📋 Copy prompt</button><button class="p" id="en" disabled>✨
+            <div class="bar"><button class="p" id="vp">👁️ View prompt</button><button class="p" id="cp">📋 Copy prompt</button><button class="p" id="en" disabled>✨
                     Enhance for
                     my plot</button><button id="un" style="display:none">↩ Restore original</button><button
                     id="rs">Reset
@@ -131,8 +186,6 @@
                     above.</p>
             </details>
             <div id="blk"></div>
-            <div id="out"></div>
-            <div id="ch"></div>
         </section>
     </div>
     <script src="js/constants.js"></script>

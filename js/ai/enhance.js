@@ -28,13 +28,13 @@ en.onclick = async () => {
     ctl.abort();
     return;
   }
-  if (!sample || BLK) return;
+  if (!sample.enhance || BLK) return;
   const b = build();
   ctl = new AbortController();
   en.textContent = "⏹ Stop";
   msg("Claude is rewriting the prompt… (up to a minute)");
   try {
-    const r = await sample(metaPrompt(b), {
+    const r = await sample.enhance(metaPrompt(b), {
       modelTier: "default",
       cache: false,
       signal: ctl.signal,
@@ -91,7 +91,7 @@ en.onclick = async () => {
         "capability_removed",
       ].includes(c)
     ) {
-      sample = null;
+      sample.enhance = null;
       msg(
         "Claude access was not granted, so Enhance is off. Reload and allow it.",
         "er",
@@ -118,5 +118,5 @@ en.onclick = async () => {
   }
   ctl = null;
   en.textContent = "✨ Enhance for my plot";
-  en.disabled = !sample || BLK;
+  en.disabled = !sample.enhance || BLK;
 };

@@ -2,7 +2,7 @@ let S = dflt(),
   enh = null,
   base = null,
   ctl = null,
-  sample = null,
+  sample = { autofill: null, checker: null, enhance: null },
   CH = {};
 try {
   if (!lsG("homeplan-clean-v4")) {

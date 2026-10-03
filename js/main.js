@@ -10,59 +10,130 @@ const kOpen = () => {
     $("ks").classList.remove("on");
   };
 function updKeyBtn() {
-  $("ks-open").textContent = lsG(AKEY)
+  $("ks-open").textContent = (lsG(AKEY_ANT) || lsG(AKEY_OPE))
     ? "🔑 API key (saved)"
-    : "🔑 Claude API key";
+    : "🔑 AI API key";
 }
 $("ks-open").onclick = kOpen;
 $("ks-x").onclick = kClose;
 $("ks").addEventListener("click", (e) => {
   if (e.target === $("ks")) kClose();
 });
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && $("ks").classList.contains("on")) kClose();
+
+const pOpen = () => {
+    $("prompt-modal").classList.add("on");
+  },
+  pClose = () => {
+    $("prompt-modal").classList.remove("on");
+  };
+
+$("vp").onclick = pOpen;
+$("pm-x").onclick = pClose;
+$("prompt-modal").addEventListener("click", (e) => {
+  if (e.target === $("prompt-modal")) pClose();
 });
-$("ak-save").onclick = () => {
-  const k = $("ak").value.trim(),
-    m = $("am").value.trim() || DEFMODEL;
-  if (!/^sk-ant-[\w-]{20,}$/.test(k)) {
-    aks(
-      "That does not look like an Anthropic API key (starts with sk-ant-).",
-      "er",
-    );
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if ($("ks").classList.contains("on")) kClose();
+    if ($("prompt-modal").classList.contains("on")) pClose();
+  }
+});
+function populateModels(provider, selectedModel, selectElement) {
+  selectElement.innerHTML = "";
+  const models = MODELS[provider] || [];
+  models.forEach(m => {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m;
+    if (m === selectedModel) opt.selected = true;
+    selectElement.appendChild(opt);
+  });
+  if (!models.includes(selectedModel)) {
+    selectElement.value = models[0];
+  }
+}
+
+function saveFeatConf() {
+  const conf = {
+    autofill: { p: $("prov-af").value, m: $("mod-af").value },
+    checker: { p: $("prov-ck").value, m: $("mod-ck").value },
+    enhance: { p: $("prov-en").value, m: $("mod-en").value }
+  };
+  lsS(FEAT_CONF, JSON.stringify(conf));
+  setupSample();
+}
+
+["af", "ck", "en"].forEach(f => {
+  $(`prov-${f}`).onchange = () => {
+    const p = $(`prov-${f}`).value;
+    populateModels(p, DEFMODEL[p], $(`mod-${f}`));
+    saveFeatConf();
+  };
+  $(`mod-${f}`).onchange = saveFeatConf;
+});
+
+const saveKey = (provider, keyVal, inputId, keyName) => {
+  const k = keyVal.trim();
+  if (!k) return;
+  if (provider === "anthropic" && !/^sk-ant-[\w-]{20,}$/.test(k)) {
+    aks("That does not look like an Anthropic API key (starts with sk-ant-).", "er");
     return;
   }
-  lsS(AKEY, k);
-  lsS(MKEY, m);
-  $("ak").value = "";
-  $("ak").placeholder = "saved ••••" + k.slice(-4);
-  aks("Saved in this browser only.", "ok");
+  if (provider === "openai" && !/^sk-[\w-]{20,}$/.test(k)) {
+    aks("That does not look like an OpenAI API key (starts with sk-...).", "er");
+    return;
+  }
+  lsS(keyName, k);
+  $(inputId).value = "";
+  $(inputId).placeholder = "saved ••••" + k.slice(-4);
+  aks(`${provider === "anthropic" ? "Claude" : "OpenAI"} key saved.`, "ok");
   setupSample();
-  setTimeout(kClose, 900);
 };
-$("ak-del").onclick = () => {
-  try {
-    localStorage.removeItem(AKEY);
-  } catch (e) {}
-  $("ak").value = "";
-  $("ak").placeholder = "sk-ant-...";
+
+$("ak-save-ant").onclick = () => saveKey("anthropic", $("ak-ant").value, "ak-ant", AKEY_ANT);
+$("ak-save-ope").onclick = () => saveKey("openai", $("ak-ope").value, "ak-ope", AKEY_OPE);
+
+const delKey = (keyName, inputId, defaultPlaceholder) => {
+  try { localStorage.removeItem(keyName); } catch (e) {}
+  $(inputId).value = "";
+  $(inputId).placeholder = defaultPlaceholder;
   aks("Key removed.", "ok");
   setupSample();
 };
+
+$("ak-del-ant").onclick = () => delKey(AKEY_ANT, "ak-ant", "sk-ant-...");
+$("ak-del-ope").onclick = () => delKey(AKEY_OPE, "ak-ope", "sk-proj-...");
+
 (async () => {
   try {
     if (window.claude && claude.use) {
-      sample = await claude.use("sample");
-      platformSample = !!sample;
+      const s = await claude.use("sample");
+      sample = { autofill: s, checker: s, enhance: s };
+      platformSample = !!s;
     }
   } catch (e) {
-    sample = null;
+    sample = { autofill: null, checker: null, enhance: null };
     platformSample = false;
   }
   $("ks-open").style.display = platformSample ? "none" : "";
-  $("am").value = lsG(MKEY) || DEFMODEL;
-  const sk = lsG(AKEY);
-  if (sk) $("ak").placeholder = "saved ••••" + sk.slice(-4);
+
+  let conf = {};
+  try { conf = JSON.parse(lsG(FEAT_CONF) || "{}"); } catch(e){}
+
+  ["af", "ck", "en"].forEach(f => {
+    const fn = f === "af" ? "autofill" : f === "ck" ? "checker" : "enhance";
+    const p = (conf[fn] && conf[fn].p) || DEFPROV;
+    const m = (conf[fn] && conf[fn].m) || DEFMODEL[p];
+    $(`prov-${f}`).value = p;
+    populateModels(p, m, $(`mod-${f}`));
+  });
+
+  const skAnt = lsG(AKEY_ANT);
+  if (skAnt) $("ak-ant").placeholder = "saved ••••" + skAnt.slice(-4);
+  const skOpe = lsG(AKEY_OPE);
+  if (skOpe) $("ak-ope").placeholder = "saved ••••" + skOpe.slice(-4);
+
   await setupSample();
 })();
 render();
