@@ -44,13 +44,13 @@ function populateModels(provider, selectedModel, selectElement) {
   const models = MODELS[provider] || [];
   models.forEach(m => {
     const opt = document.createElement("option");
-    opt.value = m;
-    opt.textContent = m;
-    if (m === selectedModel) opt.selected = true;
+    opt.value = m.id || m;
+    opt.textContent = m.name || m;
+    if ((m.id || m) === selectedModel) opt.selected = true;
     selectElement.appendChild(opt);
   });
-  if (!models.includes(selectedModel)) {
-    selectElement.value = models[0];
+  if (!models.find(m => (m.id || m) === selectedModel)) {
+    selectElement.value = models[0].id || models[0];
   }
 }
 

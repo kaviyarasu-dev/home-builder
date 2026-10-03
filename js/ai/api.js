@@ -7,27 +7,35 @@ const AKEY_ANT = "homeplan-apikey-ant-v1",
   DEFMODEL = {
     anthropic: "claude-sonnet-5-5",
     openai: "gpt-6.1-sol",
-    kie: "dall-e-3"
+    kie: "gpt-image-2.5-sunburst"
   };
 
 const MODELS = {
   anthropic: [
-    "claude-opus-5-5",
-    "claude-sonnet-5-5",
-    "claude-sonnet-5",
-    "claude-haiku-4-5"
+    { id: "claude-opus-5-5", name: "Claude Opus 5.5 - High Quality" },
+    { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5 - Standard Quality" },
+    { id: "claude-sonnet-5", name: "Claude Sonnet 5 - Standard Quality" },
+    { id: "claude-haiku-4-5", name: "Claude Haiku 4.5 - Fast Quality" }
   ],
   openai: [
-    "gpt-6-astra",
-    "gpt-6.1-sol",
-    "gpt-6-sol",
-    "gpt-6-luna",
-    "dall-e-3"
+    { id: "gpt-6-astra", name: "GPT 6 Astra - High Quality" },
+    { id: "gpt-6.1-sol", name: "GPT 6.1 Sol - High Quality" },
+    { id: "gpt-6-sol", name: "GPT 6 Sol - Standard Quality" },
+    { id: "gpt-6-luna", name: "GPT 6 Luna - Fast Quality" },
+    { id: "dall-e-3", name: "DALL-E 3 - High Quality" }
   ],
   kie: [
-    "dall-e-3",
-    "midjourney-v6",
-    "stable-diffusion-xl"
+    { id: "gpt-image-2.5-sunburst", name: "GPT Image 2.5 Sunburst - High Quality" },
+    { id: "gpt-image-2.5-flare", name: "GPT Image 2.5 Flare - High Quality" },
+    { id: "gpt-image-2", name: "GPT Image 2 - Standard Quality" },
+    { id: "grok-imagine-image-2.0", name: "Grok Imagine Image 2.0 - High Quality" },
+    { id: "seedream-5.0-pro", name: "Seedream 5.0 Pro - High Quality" },
+    { id: "nano-banana-2", name: "Nano Banana 2 - Standard Quality" },
+    { id: "nano-banana-pro", name: "Nano Banana Pro - High Quality" },
+    { id: "gpt-image-1.5", name: "GPT Image 1.5 - Standard Quality" },
+    { id: "seedream-5.0-lite", name: "Seedream 5.0 Lite - Fast Quality" },
+    { id: "wan-2.7-image-pro", name: "Wan 2.7 Image Pro - High Quality" },
+    { id: "wan-2.7-image", name: "Wan 2.7 Image - Standard Quality" }
   ]
 };
 
@@ -340,7 +348,9 @@ class KieProvider extends AIProvider {
         body: JSON.stringify({
           model: this.model,
           prompt: String(input),
-          n: 1
+          n: 1,
+          size: "1024x1024",
+          aspect_ratio: "1:1"
         }),
       });
       const data = await res.json();
