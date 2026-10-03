@@ -171,3 +171,82 @@ function tsw() {
 
 // [label, type(t text|n number|s select|c checks|a textarea), options, default]
 
+// --- IndexedDB Wrapper ---
+const idb = {
+  db: null,
+  init() {
+    return new Promise((resolve, reject) => {
+      if (this.db) return resolve(this.db);
+      const req = indexedDB.open('homeplan_db', 1);
+      req.onupgradeneeded = e => {
+        e.target.result.createObjectStore('kv');
+      };
+      req.onsuccess = e => {
+        this.db = e.target.result;
+        resolve(this.db);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  },
+  async get(k) {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('kv', 'readonly');
+      const req = tx.objectStore('kv').get(k);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  },
+  async set(k, v) {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('kv', 'readwrite');
+      const req = tx.objectStore('kv').put(v, k);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  },
+  async del(k) {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('kv', 'readwrite');
+      const req = tx.objectStore('kv').delete(k);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+};
+
+// --- Idle Timeout for Fetch Streams ---
+function createIdleController(timeoutMs = 120000, parentSignal = null) {
+  const controller = new AbortController();
+  let timeoutId = null;
+
+  const reset = () => {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (!controller.signal.aborted) {
+      timeoutId = setTimeout(() => {
+        controller.abort(new Error('Idle timeout exceeded'));
+      }, timeoutMs);
+    }
+  };
+
+  const clear = () => {
+    if (timeoutId) clearTimeout(timeoutId);
+  };
+
+  if (parentSignal) {
+    if (parentSignal.aborted) {
+      controller.abort(parentSignal.reason);
+    } else {
+      parentSignal.addEventListener('abort', () => {
+        clear();
+        controller.abort(parentSignal.reason);
+      }, { once: true });
+    }
+  }
+
+  reset();
+
+  return { signal: controller.signal, reset, clear, controller };
+}

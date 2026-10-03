@@ -441,3 +441,82 @@ document.getElementById("cp").onclick = async () => {
   setTimeout(() => (b.textContent = "📋 Copy prompt"), 1800);
 };
 
+// Automation Section Tab Switching (UI only)
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    // Remove active class from all tabs
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    // Hide all tab contents
+    document.querySelectorAll(".tab-content").forEach(c => c.style.display = "none");
+    
+    // Set clicked tab to active
+    btn.classList.add("active");
+    // Show corresponding content
+    const targetId = btn.dataset.target;
+    document.getElementById(targetId).style.display = "block";
+  });
+});
+
+// Automation UI - UI helpers
+const runGoBtn = document.getElementById("run-go");
+const runCancelBtn = document.getElementById("run-cancel");
+const runSt = document.getElementById("run-st");
+const runImgGrid = document.getElementById("run-img-grid");
+
+window.updateRunStatus = function(stepMsg, attempt) {
+  runSt.textContent = attempt > 0 ? `${stepMsg} (Retry attempt ${attempt}...)` : stepMsg;
+  runSt.style.color = attempt > 0 ? "var(--er)" : "var(--mu)";
+};
+
+window.renderRunImage = function(imgId, url, prompt, isError, errorMsg) {
+  const ph = runImgGrid.querySelector("div");
+  if (ph && ph.style.gridColumn === "1 / -1") ph.remove();
+
+  let card = document.getElementById(`img-card-${imgId}`);
+  if (!card) {
+    card = document.createElement("div");
+    card.id = `img-card-${imgId}`;
+    card.style.cssText = "border: 1px solid var(--ln); border-radius: 8px; padding: 10px; background: var(--bg); display: flex; flex-direction: column; gap: 8px;";
+    runImgGrid.appendChild(card);
+  }
+
+  if (isError) {
+    card.innerHTML = `
+      <div style="color:var(--er); font-size:12px; font-weight:bold;">❌ Failed to generate</div>
+      <div style="font-size:12px; color:var(--mu);">${esc(errorMsg || "Unknown error")}</div>
+      <div style="font-size:11px; color:var(--mu); max-height:40px; overflow:hidden;">Prompt: ${esc(prompt)}</div>
+      <button class="p" style="font-size:12px; padding:6px;" onclick="retryImage('${imgId}')">🔄 Retry this image</button>
+    `;
+  } else {
+    card.innerHTML = `
+      <img src="${url}" style="width: 100%; border-radius: 6px; object-fit: cover;" alt="Generated Plan">
+      <div style="font-size:11px; color:var(--mu); max-height: 40px; overflow-y: auto;">${esc(prompt)}</div>
+    `;
+  }
+};
+
+window.showFatalApiError = function(code, message) {
+  const errMsg = `Fatal API Error (${code}): ${message}`;
+  updateRunStatus(errMsg, 0);
+  runSt.style.color = "var(--er)";
+  runGoBtn.style.display = "block";
+  runCancelBtn.style.display = "none";
+  alert(errMsg);
+};
+
+window.retryImage = function(imgId) {
+  console.log("Retry image", imgId);
+  // To be implemented in Part 5
+};
+
+// Main Layout Tab Switching
+document.querySelectorAll(".main-tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".main-tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".main-tab-content").forEach(c => c.style.display = "none");
+    btn.classList.add("active");
+    const targetId = btn.dataset.target;
+    document.getElementById(targetId).style.display = "block";
+  });
+});
+

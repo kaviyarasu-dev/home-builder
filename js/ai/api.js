@@ -1,11 +1,13 @@
 // ===== Standalone mode: user's own API key =====
 const AKEY_ANT = "homeplan-apikey-ant-v1",
   AKEY_OPE = "homeplan-apikey-ope-v1",
+  AKEY_KIE = "homeplan-apikey-kie-v1",
   FEAT_CONF = "homeplan-feat-v1",
   DEFPROV = "anthropic",
   DEFMODEL = {
     anthropic: "claude-sonnet-5-5",
-    openai: "gpt-6.1-sol"
+    openai: "gpt-6.1-sol",
+    kie: "dall-e-3"
   };
 
 const MODELS = {
@@ -19,7 +21,13 @@ const MODELS = {
     "gpt-6-astra",
     "gpt-6.1-sol",
     "gpt-6-sol",
-    "gpt-6-luna"
+    "gpt-6-luna",
+    "dall-e-3"
+  ],
+  kie: [
+    "dall-e-3",
+    "midjourney-v6",
+    "stable-diffusion-xl"
   ]
 };
 
@@ -57,6 +65,53 @@ function parseJsonLoose(t) {
   throw { code: "invalid_json", message: "reply had no valid JSON", text: t };
 }
 
+async function fetchWithRetry(url, options, maxRetries = 3) {
+  let attempt = 0;
+  while (true) {
+    try {
+      const res = await fetch(url, options);
+      if (res.ok) return res;
+      
+      const s = res.status;
+      if ([400, 401, 402, 403].includes(s)) {
+        let m = "";
+        try { const j = await res.json(); m = j.error?.message || ""; } catch(e){}
+        const c = (s === 401 || s === 403) ? "bad_key" : "upstream_error";
+        throw { code: c, message: c === "bad_key" ? "API key rejected (" + s + "). Check the key and its credits." : m || "HTTP " + s };
+      }
+      
+      if ([429, 500, 502, 503, 504, 529].includes(s)) {
+        if (attempt >= maxRetries) {
+           let m = "";
+           try { const j = await res.json(); m = j.error?.message || ""; } catch(e){}
+           throw { code: s === 429 ? "rate_limited" : "upstream_error", message: m || "HTTP " + s };
+        }
+        let delay = 1000 * Math.pow(2, attempt) + Math.random() * 1000;
+        const retryAfter = res.headers.get("retry-after");
+        if (retryAfter) {
+           const ra = parseInt(retryAfter, 10);
+           if (!isNaN(ra)) delay = ra * 1000;
+        }
+        await new Promise(r => setTimeout(r, delay));
+        attempt++;
+        continue;
+      }
+      
+      let m = "";
+      try { const j = await res.json(); m = j.error?.message || ""; } catch(e){}
+      throw { code: "upstream_error", message: m || "HTTP " + s };
+    } catch (e) {
+      if (e.name === "AbortError" || e.code === "cancelled") throw { code: "cancelled" };
+      if (e.code) throw e;
+      if (attempt >= maxRetries) {
+         throw { code: "network", message: "could not reach API (check internet / blockers)" };
+      }
+      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt) + Math.random() * 1000));
+      attempt++;
+    }
+  }
+}
+
 // SOLID: Abstract AI Provider
 class AIProvider {
   constructor(key, model) {
@@ -89,11 +144,15 @@ class AnthropicProvider extends AIProvider {
       });
     }
     content.push({ type: "text", text: String(input) });
+
+    const idle = typeof createIdleController === "function" ? createIdleController(120000, opts.signal) : { signal: opts.signal, reset: ()=>{}, clear: ()=>{} };
+    const signal = idle.signal;
+
     let res;
     try {
-      res = await fetch("https://api.anthropic.com/v1/messages", {
+      res = await fetchWithRetry("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        signal: opts.signal,
+        signal: signal,
         headers: {
           "content-type": "application/json",
           "x-api-key": this.key,
@@ -108,29 +167,16 @@ class AnthropicProvider extends AIProvider {
         }),
       });
     } catch (e) {
-      if (e && e.name === "AbortError") throw { code: "cancelled" };
-      throw {
-        code: "network",
-        message: "could not reach api.anthropic.com (check internet / blockers)",
-      };
+      idle.clear();
+      throw e;
     }
-    if (!res.ok) {
-      let m = "";
-      try {
-        const j = await res.json();
-        m = (j.error && j.error.message) || "";
-      } catch (e) { }
-      const c = res.status === 401 || res.status === 403 ? "bad_key" : res.status === 429 ? "rate_limited" : "upstream_error";
-      throw {
-        code: c,
-        message: c === "bad_key" ? "API key rejected (" + res.status + "). Check the key and its credits." : m || "HTTP " + res.status,
-      };
-    }
+    
     const rd = res.body.getReader(), dec = new TextDecoder();
     let buf = "", text = "", stop = "";
     try {
       for (; ;) {
         const { done, value } = await rd.read();
+        idle.reset();
         if (done) break;
         buf += dec.decode(value, { stream: true });
         let i;
@@ -142,21 +188,28 @@ class AnthropicProvider extends AIProvider {
           if (!d || d === "[DONE]") continue;
           let ev;
           try { ev = JSON.parse(d); } catch (e) { continue; }
-          if (ev.type === "content_block_delta" && ev.delta && ev.delta.type === "text_delta") {
+          
+          if (ev.type === "message_start" && ev.message && ev.message.usage) {
+             console.log("[Anthropic] Token Usage (Start):", ev.message.usage);
+          } else if (ev.type === "content_block_delta" && ev.delta && ev.delta.type === "text_delta") {
             text += ev.delta.text;
             if (opts.onText) {
               try { opts.onText({ text, delta: ev.delta.text }); } catch (e) { }
             }
-          } else if (ev.type === "message_delta" && ev.delta && ev.delta.stop_reason)
-            stop = ev.delta.stop_reason;
-          else if (ev.type === "error")
+          } else if (ev.type === "message_delta") {
+            if (ev.delta && ev.delta.stop_reason) stop = ev.delta.stop_reason;
+            if (ev.usage) console.log("[Anthropic] Token Usage (Delta):", ev.usage);
+          } else if (ev.type === "error") {
             throw { code: "upstream_error", message: (ev.error && ev.error.message) || "stream error", text };
+          }
         }
       }
     } catch (e) {
+      idle.clear();
       if (e && e.name === "AbortError") throw { code: "cancelled", text };
       throw e;
     }
+    idle.clear();
     if (!text.trim()) throw { code: "empty_completion" };
     return { text, truncated: stop === "max_tokens" };
   }
@@ -190,19 +243,22 @@ class OpenAIProvider extends AIProvider {
     }
     content.push({ type: "text", text: String(input) });
 
+    const idle = typeof createIdleController === "function" ? createIdleController(120000, opts.signal) : { signal: opts.signal, reset: ()=>{}, clear: ()=>{} };
+    const signal = idle.signal;
+
     let res;
     try {
-      // NOTE: o1-series might require max_completion_tokens, but as of now max_completion_tokens or not specifying it works.
       const reqBody = {
         model: this.model,
         stream: true,
         messages: [{ role: "user", content }],
         max_completion_tokens: 16000,
+        stream_options: { include_usage: true }
       };
 
-      res = await fetch("https://api.openai.com/v1/chat/completions", {
+      res = await fetchWithRetry("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        signal: opts.signal,
+        signal: signal,
         headers: {
           "content-type": "application/json",
           "Authorization": "Bearer " + this.key,
@@ -210,23 +266,8 @@ class OpenAIProvider extends AIProvider {
         body: JSON.stringify(reqBody),
       });
     } catch (e) {
-      if (e && e.name === "AbortError") throw { code: "cancelled" };
-      throw {
-        code: "network",
-        message: "could not reach api.openai.com (check internet / blockers)",
-      };
-    }
-    if (!res.ok) {
-      let m = "";
-      try {
-        const j = await res.json();
-        m = (j.error && j.error.message) || "";
-      } catch (e) { }
-      const c = res.status === 401 || res.status === 403 ? "bad_key" : res.status === 429 ? "rate_limited" : "upstream_error";
-      throw {
-        code: c,
-        message: c === "bad_key" ? "API key rejected (" + res.status + "). Check the key and its credits." : m || "HTTP " + res.status,
-      };
+      idle.clear();
+      throw e;
     }
 
     const rd = res.body.getReader(), dec = new TextDecoder();
@@ -234,6 +275,7 @@ class OpenAIProvider extends AIProvider {
     try {
       for (; ;) {
         const { done, value } = await rd.read();
+        idle.reset();
         if (done) break;
         buf += dec.decode(value, { stream: true });
         let i;
@@ -246,6 +288,9 @@ class OpenAIProvider extends AIProvider {
           let ev;
           try { ev = JSON.parse(d); } catch (e) { continue; }
 
+          if (ev.usage) {
+             console.log("[OpenAI] Token Usage:", ev.usage);
+          }
           if (ev.choices && ev.choices.length > 0) {
             const choice = ev.choices[0];
             if (choice.delta && choice.delta.content) {
@@ -259,9 +304,11 @@ class OpenAIProvider extends AIProvider {
         }
       }
     } catch (e) {
+      idle.clear();
       if (e && e.name === "AbortError") throw { code: "cancelled", text };
       throw e;
     }
+    idle.clear();
     if (!text.trim()) throw { code: "empty_completion" };
     return { text, truncated: stop === "length" };
   }
@@ -277,8 +324,72 @@ class OpenAIProvider extends AIProvider {
   }
 }
 
+class KieProvider extends AIProvider {
+  async call(input, opts) {
+    opts = opts || {};
+    const signal = opts.signal;
+    let taskId;
+    try {
+      const res = await fetchWithRetry("https://api.kie.ai/v1/images/generations", {
+        method: "POST",
+        signal: signal,
+        headers: {
+          "content-type": "application/json",
+          "Authorization": "Bearer " + this.key,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          prompt: String(input),
+          n: 1
+        }),
+      });
+      const data = await res.json();
+      taskId = data.id || data.task_id;
+      if (!taskId) {
+        if (data.data && data.data[0] && data.data[0].url) return { text: data.data[0].url, truncated: false };
+        throw { code: "upstream_error", message: "Kie API returned no task ID" };
+      }
+    } catch(e) {
+      throw e;
+    }
+    
+    while (true) {
+      if (signal && signal.aborted) throw { code: "cancelled" };
+      await new Promise(r => setTimeout(r, 4000));
+      if (signal && signal.aborted) throw { code: "cancelled" };
+      try {
+        const pRes = await fetchWithRetry(`https://api.kie.ai/v1/images/generations/${taskId}`, {
+          headers: { "Authorization": "Bearer " + this.key },
+          signal: signal
+        });
+        const pData = await pRes.json();
+        const status = pData.status || pData.task_status;
+        if (status === "completed" || status === "succeeded") {
+          const url = pData.images?.[0]?.url || pData.data?.[0]?.url || pData.result?.images?.[0]?.url;
+          return { text: url, truncated: false };
+        }
+        if (status === "failed") {
+          throw { code: "upstream_error", message: pData.error?.message || "Kie task failed" };
+        }
+      } catch(e) {
+        if (e.code === "cancelled") throw e;
+        throw e;
+      }
+    }
+  }
+  limits() {
+    return {
+      maxPromptBytes: 20000,
+      images: { maxCount: 0 }
+    };
+  }
+}
+
 function makeApiSample(providerName, key, model) {
-  let provider = providerName === "openai" ? new OpenAIProvider(key, model) : new AnthropicProvider(key, model);
+  let provider;
+  if (providerName === "openai") provider = new OpenAIProvider(key, model);
+  else if (providerName === "kie") provider = new KieProvider(key, model);
+  else provider = new AnthropicProvider(key, model);
 
   const call = async (input, opts) => provider.call(input, opts);
   const f = (i, o) => call(i, o);
@@ -297,6 +408,7 @@ async function setupSample() {
   if (!platformSample) {
     const kAnt = lsG(AKEY_ANT);
     const kOpe = lsG(AKEY_OPE);
+    const kKie = lsG(AKEY_KIE);
     
     let conf = {};
     try { conf = JSON.parse(lsG(FEAT_CONF) || "{}"); } catch(e){}
@@ -307,14 +419,16 @@ async function setupSample() {
     const mk = (f) => {
         const p = getP(f);
         const m = getM(f, p);
-        const k = p === "anthropic" ? kAnt : kOpe;
+        const k = p === "anthropic" ? kAnt : p === "openai" ? kOpe : kKie;
         return k ? makeApiSample(p, k, m) : null;
     };
 
     sample = {
         autofill: mk("autofill"),
         checker: mk("checker"),
-        enhance: mk("enhance")
+        enhance: mk("enhance"),
+        runTxt: mk("run-txt"),
+        runImg: mk("run-img")
     };
   }
   en.disabled = !sample.enhance || BLK;

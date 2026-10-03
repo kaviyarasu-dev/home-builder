@@ -209,3 +209,206 @@ async function runAf() {
   updGo();
 }
 go.onclick = runAf;
+
+// --- Part 4: Automation Engine & Base Plan ---
+
+let runCtl = null;
+
+function getBasePlanPrompt(architectPrompt) {
+  return `You are an expert architect. Based on the following requirements, generate a Base Plan JSON layout for the house.
+The JSON must follow this exact structure:
+{
+  "plot_width": number,
+  "plot_depth": number,
+  "floors": [
+    {
+      "floor_index": number,
+      "floor_name": string,
+      "rooms": [
+        {
+          "name": string,
+          "width": number,
+          "length": number,
+          "x": number,
+          "y": number
+        }
+      ]
+    }
+  ]
+}
+
+REQUIREMENTS:
+\${architectPrompt}
+
+CRITICAL RULES:
+1. UNITS ARE FEET: All numeric dimensions in your JSON (plot_width, plot_depth, width, length, x, y) MUST be in FEET (e.g., use 10.5 for 10'6"). You MUST ignore the "All internal values in inches" rule from the REQUIREMENTS for this JSON output.
+2. SPACES AS ROOMS: Include all functional spaces as "rooms" in the array (e.g., Bedrooms, Kitchens, Toilets, Staircase, Passages, Shafts).
+3. MINIMUM SIZES: Room sizes must meet standard minimums (e.g., bedroom >= 9x9 ft, bathroom >= 4x4 ft).
+4. BOUNDS & SETBACKS: All rooms must fit entirely within the plot bounds (0 <= x <= plot_width, 0 <= y <= plot_depth). Respect the minimum setbacks stated in the requirements; do not place rooms inside the setback zones.
+5. NO OVERLAPPING: Rooms on the same floor must strictly not overlap each other.
+6. VERTICAL ALIGNMENT: The Staircase and any Shafts/Ducts MUST have the exact same x, y, width, and length on every floor. Toilets should ideally stack vertically.
+7. IGNORE TEXT REQUESTS: The REQUIREMENTS ask for textual tables (D1-D8), SVGs, and other reports. YOU MUST COMPLETELY IGNORE ALL THOSE OUTPUT FORMAT REQUESTS. Your ONLY output must be the raw JSON object. Do not write any explanations or text.
+8. FORMAT: Output ONLY valid JSON. Do not add markdown formatting like \`\`\`json. Return just the raw JSON object.
+`;
+}
+
+function validateBasePlan(json, eW, eN) {
+  const errors = [];
+  if (!json || typeof json !== 'object' || !Array.isArray(json.floors)) {
+    return ["Invalid JSON structure: missing 'floors' array"];
+  }
+  
+  const pw = Number(json.plot_width) || geo().pw || 30;
+  const pd = Number(json.plot_depth) || geo().pd || 40;
+
+  json.floors.forEach((floor, fIdx) => {
+    if (!Array.isArray(floor.rooms)) {
+      errors.push(`Floor ${fIdx} is missing 'rooms' array`);
+      return;
+    }
+    let floorArea = 0;
+    floor.rooms.forEach((r, rIdx) => {
+      const rw = Number(r.width), rl = Number(r.length), rx = Number(r.x), ry = Number(r.y);
+      if (isNaN(rw) || isNaN(rl) || isNaN(rx) || isNaN(ry)) {
+        errors.push(`Floor ${fIdx}, Room ${rIdx} (${r.name}) has invalid numeric dimensions (width, length, x, y)`);
+        return;
+      }
+      
+      const name = String(r.name).toLowerCase();
+      if (name.includes('bed') && (rw < 9 || rl < 9)) {
+        errors.push(`Room ${r.name} on Floor ${fIdx} is too small for a bedroom (min 9x9). Given: ${rw}x${rl}`);
+      }
+      if (name.includes('bath') && (rw < 4 || rl < 4)) {
+        errors.push(`Room ${r.name} on Floor ${fIdx} is too small for a bathroom (min 4x4). Given: ${rw}x${rl}`);
+      }
+      
+      if (rx < 0 || ry < 0 || rx + rw > pw || ry + rl > pd) {
+        errors.push(`Room ${r.name} on Floor ${fIdx} is out of plot bounds (${pw}x${pd}). Given: x=${rx}, y=${ry}, w=${rw}, l=${rl}`);
+      }
+      
+      floor.rooms.forEach((r2, r2Idx) => {
+        if (rIdx >= r2Idx) return;
+        const rw2 = Number(r2.width), rl2 = Number(r2.length), rx2 = Number(r2.x), ry2 = Number(r2.y);
+        if (isNaN(rw2) || isNaN(rl2) || isNaN(rx2) || isNaN(ry2)) return;
+        const noOverlap = rx + rw <= rx2 || rx2 + rw2 <= rx || ry + rl <= ry2 || ry2 + rl2 <= ry;
+        if (!noOverlap) {
+          errors.push(`Room ${r.name} and ${r2.name} overlap on Floor ${fIdx}`);
+        }
+      });
+      
+      floorArea += (rw * rl);
+    });
+    
+    if (eW > 0 && eN > 0) {
+      const buildable = eW * eN;
+      if (floorArea > buildable) {
+        errors.push(`Floor ${fIdx} area (${floorArea}) exceeds buildable area (${buildable} = ${eW}x${eN})`);
+      }
+    }
+  });
+  
+  return errors;
+}
+
+async function runAutomationPipeline() {
+  if (runCtl) {
+    runCtl.abort();
+    return;
+  }
+  
+  if (!sample.runTxt) {
+    showFatalApiError("missing_api", "Automation Text AI needs an API key.");
+    return;
+  }
+  
+  runCtl = new AbortController();
+  const signal = runCtl.signal;
+  
+  document.getElementById("run-dash").style.display = "block";
+  runGoBtn.style.display = "none";
+  runCancelBtn.style.display = "block";
+  
+  try {
+    const savedState = await idb.get("autoRunState");
+    let step = savedState ? savedState.step : 1;
+    let basePlanJson = savedState ? savedState.basePlan : null;
+    
+    const architectPrompt = build().text;
+    const geom = geo();
+    
+    if (step === 1) {
+      updateRunStatus("Step 1: Generating Base Plan Layout...", 0);
+      let attempts = 0;
+      let prompt = getBasePlanPrompt(architectPrompt);
+      
+      while (attempts < 3) {
+        if (signal.aborted) throw { code: "cancelled" };
+        updateRunStatus("Step 1: Generating Base Plan Layout...", attempts);
+        
+        let reply;
+        try {
+          reply = await sample.runTxt.json(prompt, { signal });
+        } catch (e) {
+          throw e;
+        }
+        
+        const errors = validateBasePlan(reply, geom.eW, geom.eN);
+        if (errors.length === 0) {
+          basePlanJson = reply;
+          break;
+        }
+        
+        attempts++;
+        if (attempts >= 3) {
+          throw new Error("Validation failed after 3 attempts: \n" + errors.join("\n"));
+        }
+        
+        prompt += "\n\nYOUR PREVIOUS OUTPUT HAD ERRORS. FIX THEM:\n" + errors.join("\n");
+      }
+      
+      step = 2;
+      await idb.set("autoRunState", { step, basePlan: basePlanJson });
+      
+      const runOut = document.getElementById("run-out");
+      runOut.textContent = JSON.stringify(basePlanJson, null, 2);
+    }
+    
+    updateRunStatus("Step 1 completed. Further steps will be implemented in Part 5.", 0);
+    
+  } catch(e) {
+    if (e && e.code === "cancelled") {
+      updateRunStatus("Aborted by user.", 0);
+    } else {
+      showFatalApiError(e.code || "error", e.message || String(e));
+    }
+  }
+  
+  runCtl = null;
+  runGoBtn.style.display = "block";
+  runCancelBtn.style.display = "none";
+  runGoBtn.textContent = "🚀 Resume Unfinished Automation Run";
+}
+
+runGoBtn.addEventListener("click", runAutomationPipeline);
+
+runCancelBtn.addEventListener("click", () => {
+  if (runCtl) {
+    runCtl.abort();
+    runCtl = null;
+  }
+  runGoBtn.style.display = "block";
+  runCancelBtn.style.display = "none";
+  updateRunStatus("Aborted by user.", 0);
+});
+
+// Check state on load
+window.addEventListener("DOMContentLoaded", async () => {
+  try {
+    const savedState = await idb.get("autoRunState");
+    if (savedState && savedState.step > 0 && savedState.step < 4) {
+      if (runGoBtn) {
+        runGoBtn.textContent = "🚀 Resume Unfinished Automation Run";
+      }
+    }
+  } catch(e) {}
+});

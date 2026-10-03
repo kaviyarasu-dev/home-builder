@@ -33,12 +33,15 @@
                     spend limit,
                     and never
                     share a file that has your key typed in.</p>
-                <h3 style="margin: 15px 0 10px; font-size: 14px; border-bottom: 1px solid var(--ln); padding-bottom: 5px;">API Keys</h3>
+                <h3
+                    style="margin: 15px 0 10px; font-size: 14px; border-bottom: 1px solid var(--ln); padding-bottom: 5px;">
+                    API Keys</h3>
                 <div class="g" style="grid-template-columns: 1fr;">
                     <div class="f">
                         <label>Claude API key</label>
                         <div style="display:flex;gap:8px">
-                            <input id="ak-ant" type="password" autocomplete="off" placeholder="sk-ant-..." style="flex:1">
+                            <input id="ak-ant" type="password" autocomplete="off" placeholder="sk-ant-..."
+                                style="flex:1">
                             <button class="p" id="ak-save-ant">Save</button>
                             <button id="ak-del-ant">🗑 Remove</button>
                         </div>
@@ -46,14 +49,26 @@
                     <div class="f">
                         <label>OpenAI API key</label>
                         <div style="display:flex;gap:8px">
-                            <input id="ak-ope" type="password" autocomplete="off" placeholder="sk-proj-..." style="flex:1">
+                            <input id="ak-ope" type="password" autocomplete="off" placeholder="sk-proj-..."
+                                style="flex:1">
                             <button class="p" id="ak-save-ope">Save</button>
                             <button id="ak-del-ope">🗑 Remove</button>
                         </div>
                     </div>
+                    <div class="f">
+                        <label>KIE API key</label>
+                        <div style="display:flex;gap:8px">
+                            <input id="ak-kie" type="password" autocomplete="off" placeholder="sk-kie-..."
+                                style="flex:1">
+                            <button class="p" id="ak-save-kie">Save</button>
+                            <button id="ak-del-kie">🗑 Remove</button>
+                        </div>
+                    </div>
                 </div>
 
-                <h3 style="margin: 15px 0 10px; font-size: 14px; border-bottom: 1px solid var(--ln); padding-bottom: 5px;">Feature Settings</h3>
+                <h3
+                    style="margin: 15px 0 10px; font-size: 14px; border-bottom: 1px solid var(--ln); padding-bottom: 5px;">
+                    Feature Settings</h3>
                 <div class="g">
                     <div class="f"><label>Auto-fill AI</label>
                         <div style="display:flex;gap:4px">
@@ -65,7 +80,7 @@
                         </div>
                     </div>
                     <div class="f"><label>Checker AI</label>
-                         <div style="display:flex;gap:4px">
+                        <div style="display:flex;gap:4px">
                             <select id="prov-ck" style="width:40%">
                                 <option value="anthropic">Claude</option>
                                 <option value="openai">OpenAI</option>
@@ -73,7 +88,7 @@
                             <select id="mod-ck" style="flex:1"></select>
                         </div>
                     </div>
-                    <div class="f" style="grid-column: 1 / -1;"><label>Enhance AI</label>
+                    <div class="f"><label>Enhance AI</label>
                         <div style="display:flex;gap:4px">
                             <select id="prov-en" style="width:40%">
                                 <option value="anthropic">Claude</option>
@@ -82,8 +97,27 @@
                             <select id="mod-en" style="flex:1"></select>
                         </div>
                     </div>
+                    <div class="f"><label>Automation Text AI</label>
+                        <div style="display:flex;gap:4px">
+                            <select id="prov-run-txt" style="width:40%">
+                                <option value="anthropic">Claude</option>
+                                <option value="openai">OpenAI</option>
+                            </select>
+                            <!-- TODO (Technical): Populate these options dynamically from api.js -->
+                            <select id="mod-run-txt" style="flex:1"></select>
+                        </div>
+                    </div>
+                    <div class="f" style="grid-column: 1 / -1;"><label>Automation Image AI</label>
+                        <div style="display:flex;gap:4px">
+                            <select id="prov-run-img" style="width:40%">
+                                <option value="openai">OpenAI</option>
+                                <option value="kie">KIE.ai</option>
+                            </select>
+                            <select id="mod-run-img" style="flex:1"></select>
+                        </div>
+                    </div>
                 </div>
-                
+
                 <div class="bar" style="margin:10px 0 0"><span id="ak-st"></span></div>
             </div>
         </div>
@@ -96,97 +130,210 @@
                 <div id="ch"></div>
             </div>
         </div>
-        <section class="card af" id="af">
-            <details id="af-d">
-                <summary>
-                    <h2>✨ Auto-fill from my requirement <span
-                            style="font-weight:400;color:var(--mu);font-size:12px">(optional)</span></h2>
-                </summary>
-                <p class="sub" style="margin-bottom:10px">Type your requirement (Tamil / Tanglish / English) and/or
-                    attach a
-                    blueprint, an engineer's plan, a sketch or notes. Only the form fields below get updated; the prompt
-                    itself is
-                    never edited. Anything you don't mention keeps its current value.</p>
-                <textarea id="rq"
-                    placeholder="e.g. 30 x 40 plot, road on the north side, single floor, 3 bedrooms, only for own family, car parking inside"></textarea>
-                <div class="drop" id="dz"><label class="pick">🖼 Photo / image<input type="file" id="fi" multiple
-                            accept="image/*"></label><label class="pick">📄 PDF / text file<input type="file" id="fp"
-                            multiple accept="application/pdf,.pdf,.txt,.md,.csv,.json,text/plain"></label><br><span
-                        id="dzh">Images, PDF, TXT /
-                        MD / CSV</span><br><span style="font-size:12px">You can also drop files here or paste a
-                        screenshot.</span>
+
+        <!-- Main Navigation Tabs -->
+        <div class="main-tabs">
+            <button class="main-tab-btn active" data-target="tab-req">📋 Requirements</button>
+            <!-- TODO (Technical): Optional - Add an indicator here if there are checker errors -->
+            <button class="main-tab-btn" data-target="tab-chk-pr" id="tab-btn-chk">🔍 Check & Prompt</button>
+            <button class="main-tab-btn" data-target="tab-auto">🚀 Automation</button>
+        </div>
+
+        <!-- Tab 1: Requirements -->
+        <div id="tab-req" class="main-tab-content" style="display:block;">
+            <section class="card af" id="af">
+                <details id="af-d">
+                    <summary>
+                        <h2>✨ Auto-fill from my requirement <span
+                                style="font-weight:400;color:var(--mu);font-size:12px">(optional)</span></h2>
+                    </summary>
+                    <p class="sub" style="margin-bottom:10px">Type your requirement (Tamil / Tanglish / English) and/or
+                        attach a
+                        blueprint, an engineer's plan, a sketch or notes. Only the form fields below get updated; the
+                        prompt
+                        itself is
+                        never edited. Anything you don't mention keeps its current value.</p>
+                    <textarea id="rq"
+                        placeholder="e.g. 30 x 40 plot, road on the north side, single floor, 3 bedrooms, only for own family, car parking inside"></textarea>
+                    <div class="drop" id="dz"><label class="pick">🖼 Photo / image<input type="file" id="fi" multiple
+                                accept="image/*"></label><label class="pick">📄 PDF / text file<input type="file"
+                                id="fp" multiple
+                                accept="application/pdf,.pdf,.txt,.md,.csv,.json,text/plain"></label><br><span
+                            id="dzh">Images, PDF, TXT /
+                            MD / CSV</span><br><span style="font-size:12px">You can also drop files here or paste a
+                            screenshot.</span>
+                    </div>
+                    <div class="fchips" id="fch"></div>
+                    <div class="bar" style="margin:10px 0 0"><button class="p" id="af-go" disabled>✨ Fill the
+                            form</button><button id="af-undo" style="display:none">↩ Undo auto-fill</button><button
+                            id="af-cc">📋 Copy prompt for Claude
+                            chat</button><span id="af-st"></span></div>
+                    <p class="sub" style="margin:8px 0 0;font-size:12px">File picker not opening (some mobile apps block
+                        it)? Tap
+                        “Copy prompt for Claude chat”, send it in a normal Claude chat together with your files, then
+                        paste
+                        Claude’s
+                        JSON reply into the box above and tap Fill. A pasted JSON is applied directly, with the same
+                        checks.
+                    </p>
+                    <div id="af-res"></div>
+                </details>
+            </section>
+            <div id="form"></div>
+            <div class="bar" style="margin-top: 16px; justify-content: flex-end;">
+                <button class="p" onclick="document.getElementById('tab-btn-chk').click()"
+                    style="padding: 12px 20px; font-size: 15px;">Next Step: Check & Prompt ➔</button>
+            </div>
+        </div> <!-- End Tab 1 -->
+
+        <!-- Tab 2: Check & Prompt -->
+        <div id="tab-chk-pr" class="main-tab-content" style="display:none;">
+            <section class="card" id="ck">
+                <p class="sub" style="margin-bottom:10px">Finished the form? Claude reads every answer above and lists
+                    what
+                    will
+                    clash when your plan is created, and how to fix each one. Your answers are not changed.</p>
+                <div class="bar" style="margin:0 0 4px"><button class="p" id="ck-go">🔍 Check values with
+                        AI</button><span id="ck-st"></span></div>
+                <div id="ck-res"></div>
+            </section>
+            <section class="card" id="pr">
+                <h2>Your prompt</h2>
+                <div class="bar"><button class="p" id="vp">👁️ View prompt</button><button class="p" id="cp">📋 Copy
+                        prompt</button><button class="p" id="en" disabled>✨
+                        Enhance for
+                        my plot</button><button id="un" style="display:none">↩ Restore original</button><button
+                        id="rs">Reset
+                        form</button><span id="st"></span></div>
+                <details id="enr"
+                    style="margin:0 0 10px;font-size:12px;color:var(--mu);border:1px solid var(--ln);border-radius:8px;padding:8px 10px">
+                    <summary style="cursor:pointer;color:var(--er)">⚠ Known risk: ✨ Enhance can change things the
+                        checker
+                        does not
+                        guard</summary>
+                    <p style="margin:8px 0 4px"><b>What is checked.</b> After Enhance, the program only confirms that
+                        the
+                        “locked”
+                        lines still appear word-for-word (location, plot, plot extent, floors, one line per floor,
+                        setbacks
+                        +
+                        envelope, parking: 9 lines with the default 2 floors) and that the length is 300–30,000
+                        characters.
+                        It also
+                        confirms that every ticked deliverable name and PART marker is still present. If those pass, the
+                        rewrite is
+                        accepted.</p>
+                    <p style="margin:4px 0"><b>What is NOT checked</b> (Claude may reword, weaken or drop these, and the
+                        prompt is
+                        still accepted): budget and finish level, special requests, slope, coverage / FSI, new-or-old
+                        work
+                        and use,
+                        family / mobility, levels (plinth, floor height), stair details, outdoor / terrace / services,
+                        style, roof,
+                        wall / door / column / room-minimum values, blocked boundary sides, shafts, Vastu, and the
+                        mandatory
+                        rules
+                        themselves (STAIR LOCK, stack lock, no questions, number of designs, “nothing verified unless
+                        the
+                        script
+                        printed it”). The meta-prompt asks Claude to keep them, but no code enforces it.</p>
+                    <p style="margin:4px 0"><b>Stale result.</b> If you edit the form or run Auto-fill while Enhance is
+                        still
+                        running, the old request is not cancelled. Its reply is checked against the old answers and then
+                        shown, so the
+                        enhanced prompt can reflect values you have already changed.</p>
+                    <p style="margin:4px 0"><b>“Changes” list.</b> It is Claude's own summary of its edit, not a diff,
+                        so it
+                        can be
+                        incomplete.</p>
+                    <p style="margin:4px 0 0"><b>What to do.</b> Treat Enhanced text as a draft: compare it with the
+                        original (↩
+                        Restore original) before copying, and re-check any parameter you care about that is not in the
+                        locked list
+                        above.</p>
+                </details>
+                <div id="blk"></div>
+            </section>
+            <div class="bar" style="margin-top: 16px; justify-content: flex-end;">
+                <button class="p" onclick="document.querySelector('[data-target=\'tab-auto\']').click()"
+                    style="padding: 12px 20px; font-size: 15px;">Next Step: Automate Generation ➔</button>
+            </div>
+        </div> <!-- End Tab 2 -->
+
+        <!-- Tab 3: Automation -->
+        <div id="tab-auto" class="main-tab-content" style="display:none;">
+            <section class="card" id="run-auto">
+                <h2>🚀 AI Architect & Automation</h2>
+                <p class="sub" style="margin-bottom:12px">Automatically generate the final text plan, extract image
+                    prompts, generate floor plans & 3D elevations, and refine the design via chat.</p>
+
+                <div class="g" style="margin-bottom: 14px">
+                    <div class="f wd">
+                        <label>Automation Steps</label>
+                        <div class="chk">
+                            <label><input type="checkbox" id="run-chk-txt" checked disabled> 🔒 Generate Text Report
+                                (Base Plan)</label>
+                            <label><input type="checkbox" id="run-chk-img" checked> 🖼️ Auto-generate Images (Detects
+                                image prompts in the report)</label>
+                            <label><input type="checkbox" id="run-chk-pdf"> 📄 Export to PDF when finished</label>
+                        </div>
+                    </div>
                 </div>
-                <div class="fchips" id="fch"></div>
-                <div class="bar" style="margin:10px 0 0"><button class="p" id="af-go" disabled>✨ Fill the
-                        form</button><button id="af-undo" style="display:none">↩ Undo auto-fill</button><button
-                        id="af-cc">📋 Copy prompt for Claude
-                        chat</button><span id="af-st"></span></div>
-                <p class="sub" style="margin:8px 0 0;font-size:12px">File picker not opening (some mobile apps block
-                    it)? Tap
-                    “Copy prompt for Claude chat”, send it in a normal Claude chat together with your files, then paste
-                    Claude’s
-                    JSON reply into the box above and tap Fill. A pasted JSON is applied directly, with the same checks.
-                </p>
-                <div id="af-res"></div>
-            </details>
-        </section>
-        <div id="form"></div>
-        <section class="card" id="ck">
-            <p class="sub" style="margin-bottom:10px">Finished the form? Claude reads every answer above and lists what
-                will
-                clash when your plan is created, and how to fix each one. Your answers are not changed.</p>
-            <div class="bar" style="margin:0 0 4px"><button class="p" id="ck-go">🔍 Check values with AI</button><span
-                    id="ck-st"></span></div>
-            <div id="ck-res"></div>
-        </section>
-        <section class="card" id="pr">
-            <h2>Your prompt</h2>
-            <div class="bar"><button class="p" id="vp">👁️ View prompt</button><button class="p" id="cp">📋 Copy prompt</button><button class="p" id="en" disabled>✨
-                    Enhance for
-                    my plot</button><button id="un" style="display:none">↩ Restore original</button><button
-                    id="rs">Reset
-                    form</button><span id="st"></span></div>
-            <details id="enr"
-                style="margin:0 0 10px;font-size:12px;color:var(--mu);border:1px solid var(--ln);border-radius:8px;padding:8px 10px">
-                <summary style="cursor:pointer;color:var(--er)">⚠ Known risk: ✨ Enhance can change things the checker
-                    does not
-                    guard</summary>
-                <p style="margin:8px 0 4px"><b>What is checked.</b> After Enhance, the program only confirms that the
-                    “locked”
-                    lines still appear word-for-word (location, plot, plot extent, floors, one line per floor, setbacks
-                    +
-                    envelope, parking: 9 lines with the default 2 floors) and that the length is 300–30,000 characters.
-                    It also
-                    confirms that every ticked deliverable name and PART marker is still present. If those pass, the
-                    rewrite is
-                    accepted.</p>
-                <p style="margin:4px 0"><b>What is NOT checked</b> (Claude may reword, weaken or drop these, and the
-                    prompt is
-                    still accepted): budget and finish level, special requests, slope, coverage / FSI, new-or-old work
-                    and use,
-                    family / mobility, levels (plinth, floor height), stair details, outdoor / terrace / services,
-                    style, roof,
-                    wall / door / column / room-minimum values, blocked boundary sides, shafts, Vastu, and the mandatory
-                    rules
-                    themselves (STAIR LOCK, stack lock, no questions, number of designs, “nothing verified unless the
-                    script
-                    printed it”). The meta-prompt asks Claude to keep them, but no code enforces it.</p>
-                <p style="margin:4px 0"><b>Stale result.</b> If you edit the form or run Auto-fill while Enhance is
-                    still
-                    running, the old request is not cancelled. Its reply is checked against the old answers and then
-                    shown, so the
-                    enhanced prompt can reflect values you have already changed.</p>
-                <p style="margin:4px 0"><b>“Changes” list.</b> It is Claude's own summary of its edit, not a diff, so it
-                    can be
-                    incomplete.</p>
-                <p style="margin:4px 0 0"><b>What to do.</b> Treat Enhanced text as a draft: compare it with the
-                    original (↩
-                    Restore original) before copying, and re-check any parameter you care about that is not in the
-                    locked list
-                    above.</p>
-            </details>
-            <div id="blk"></div>
-        </section>
+
+                <div class="bar" style="margin-bottom: 0; display:flex; gap:8px;">
+                    <button class="p" id="run-go" style="flex:1; padding: 14px; font-size: 16px;">🚀 Start
+                        Automated AI Generation</button>
+                    <button class="p" id="run-cancel" style="display:none; flex:1; padding: 14px; font-size: 16px; background-color: var(--er);">🛑 Abort / Cancel</button>
+                </div>
+                <div id="run-cost" style="text-align:center; font-size: 13px; color: var(--mu); margin-top: 8px;">Estimated calls: ~4 to 6 (depending on floors)</div>
+                <!-- TODO (Technical): Update this status text dynamically based on the current step (e.g. "Generating text...", "Extracting image prompts...") -->
+                <div id="run-st"
+                    style="text-align:center; font-size: 13px; color: var(--mu); margin-top: 8px; min-height: 20px;">
+                </div>
+
+                <!-- Results Dashboard (Hidden initially, shown after click) -->
+                <div id="run-dash"
+                    style="display:none; margin-top: 16px; border-top: 1px solid var(--ln); padding-top: 16px;">
+                    <div class="tabs">
+                        <button class="tab-btn active" data-target="tab-text">📄 Text Report</button>
+                        <!-- TODO (Technical): Update the count in the tab dynamically once images are generated -->
+                        <button class="tab-btn" data-target="tab-imgs">🖼️ Images (0)</button>
+                        <button class="tab-btn" data-target="tab-chat">💬 Chat</button>
+                    </div>
+
+                    <div id="tab-text" class="tab-content" style="display:block;">
+                        <!-- TODO (Technical): Render the markdown/text response from the AI here -->
+                        <div id="run-out"
+                            style="white-space: pre-wrap; font: 13.5px/1.6 system-ui; max-height: 500px; overflow-y: auto; background: var(--bg); padding: 14px; border-radius: 8px; border: 1px solid var(--ln);">
+                            <i>Text Report will appear here once generated...</i></div>
+                    </div>
+
+                    <div id="tab-imgs" class="tab-content" style="display:none;">
+                        <!-- TODO (Technical): Populate this grid with generated images and their corresponding prompts -->
+                        <div id="run-img-grid" class="g"
+                            style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;">
+                            <div
+                                style="color:var(--mu); font-size: 13px; padding: 30px; text-align:center; grid-column: 1/-1;">
+                                Images will appear here once the AI text report is analyzed and generated.</div>
+                        </div>
+                    </div>
+
+                    <div id="tab-chat" class="tab-content" style="display:none;">
+                        <!-- TODO (Technical): Append user and AI chat bubbles here -->
+                        <div id="run-chat-hist"
+                            style="max-height: 400px; overflow-y: auto; margin-bottom: 12px; display:flex; flex-direction:column; gap:10px; padding: 10px; background: var(--bg); border: 1px solid var(--ln); border-radius: 8px;">
+                            <div style="color:var(--mu); font-size: 13px; text-align:center; padding: 10px;">Chat
+                                history empty.</div>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" id="run-chat-in"
+                                placeholder="Ask for modifications or ask questions about the plan..." style="flex:1;">
+                            <button class="p" id="run-chat-send">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div> <!-- End Tab 3 -->
     </div>
     <script src="js/constants.js"></script>
     <script src="js/state.js"></script>

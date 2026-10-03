@@ -10,7 +10,7 @@ const kOpen = () => {
     $("ks").classList.remove("on");
   };
 function updKeyBtn() {
-  $("ks-open").textContent = (lsG(AKEY_ANT) || lsG(AKEY_OPE))
+  $("ks-open").textContent = (lsG(AKEY_ANT) || lsG(AKEY_OPE) || lsG(AKEY_KIE))
     ? "🔑 API key (saved)"
     : "🔑 AI API key";
 }
@@ -58,13 +58,15 @@ function saveFeatConf() {
   const conf = {
     autofill: { p: $("prov-af").value, m: $("mod-af").value },
     checker: { p: $("prov-ck").value, m: $("mod-ck").value },
-    enhance: { p: $("prov-en").value, m: $("mod-en").value }
+    enhance: { p: $("prov-en").value, m: $("mod-en").value },
+    runTxt: { p: $("prov-run-txt").value, m: $("mod-run-txt").value },
+    runImg: { p: $("prov-run-img").value, m: $("mod-run-img").value }
   };
   lsS(FEAT_CONF, JSON.stringify(conf));
   setupSample();
 }
 
-["af", "ck", "en"].forEach(f => {
+["af", "ck", "en", "run-txt", "run-img"].forEach(f => {
   $(`prov-${f}`).onchange = () => {
     const p = $(`prov-${f}`).value;
     populateModels(p, DEFMODEL[p], $(`mod-${f}`));
@@ -93,6 +95,7 @@ const saveKey = (provider, keyVal, inputId, keyName) => {
 
 $("ak-save-ant").onclick = () => saveKey("anthropic", $("ak-ant").value, "ak-ant", AKEY_ANT);
 $("ak-save-ope").onclick = () => saveKey("openai", $("ak-ope").value, "ak-ope", AKEY_OPE);
+$("ak-save-kie").onclick = () => saveKey("kie", $("ak-kie").value, "ak-kie", AKEY_KIE);
 
 const delKey = (keyName, inputId, defaultPlaceholder) => {
   try { localStorage.removeItem(keyName); } catch (e) {}
@@ -104,6 +107,7 @@ const delKey = (keyName, inputId, defaultPlaceholder) => {
 
 $("ak-del-ant").onclick = () => delKey(AKEY_ANT, "ak-ant", "sk-ant-...");
 $("ak-del-ope").onclick = () => delKey(AKEY_OPE, "ak-ope", "sk-proj-...");
+$("ak-del-kie").onclick = () => delKey(AKEY_KIE, "ak-kie", "sk-kie-...");
 
 (async () => {
   try {
@@ -121,8 +125,8 @@ $("ak-del-ope").onclick = () => delKey(AKEY_OPE, "ak-ope", "sk-proj-...");
   let conf = {};
   try { conf = JSON.parse(lsG(FEAT_CONF) || "{}"); } catch(e){}
 
-  ["af", "ck", "en"].forEach(f => {
-    const fn = f === "af" ? "autofill" : f === "ck" ? "checker" : "enhance";
+  ["af", "ck", "en", "run-txt", "run-img"].forEach(f => {
+    const fn = f === "af" ? "autofill" : f === "ck" ? "checker" : f === "run-txt" ? "runTxt" : f === "run-img" ? "runImg" : "enhance";
     const p = (conf[fn] && conf[fn].p) || DEFPROV;
     const m = (conf[fn] && conf[fn].m) || DEFMODEL[p];
     $(`prov-${f}`).value = p;
@@ -133,6 +137,8 @@ $("ak-del-ope").onclick = () => delKey(AKEY_OPE, "ak-ope", "sk-proj-...");
   if (skAnt) $("ak-ant").placeholder = "saved ••••" + skAnt.slice(-4);
   const skOpe = lsG(AKEY_OPE);
   if (skOpe) $("ak-ope").placeholder = "saved ••••" + skOpe.slice(-4);
+  const skKie = lsG(AKEY_KIE);
+  if (skKie) $("ak-kie").placeholder = "saved ••••" + skKie.slice(-4);
 
   await setupSample();
 })();
