@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Home Plan Prompt Builder</title>
+    <link rel='stylesheet' href='style.css'>
+</head>
+
+<body>
+    <div class="w">
+        <h1>🏠 Home Plan Prompt Builder</h1>
+        <p class="sub">Answer the questions (or describe your requirement / attach a plan and use ✨ Auto-fill) → a
+            complete,
+            rule-based architect prompt is built live → copy it into any AI to get your house plan. Use ✨ Enhance to
+            tailor it
+            to your plot. Answers are saved in this browser only.</p>
+        <div class="bar"><button class="p" id="rd">🔄 Reset all to default values</button><button id="ks-open"
+                style="display:none">🔑 Claude API key</button><span id="rd-st"
+                style="font-size:12px;color:var(--mu)"></span>
+        </div>
+        <div class="mo" id="ks" role="dialog" aria-modal="true" aria-labelledby="ks-t">
+            <div class="mb">
+                <div class="hd">
+                    <h2 id="ks-t">🔑 Claude API key</h2><button id="ks-x" aria-label="Close">✕</button>
+                </div>
+                <p class="sub" style="margin-bottom:10px">Needed only when this file is opened outside Claude.
+                    Auto-fill,
+                    Enhance and Check values with AI call Claude with <b>your own</b> API key (console.anthropic.com).
+                    The key is
+                    saved only in this browser and is sent only to api.anthropic.com. Use a key with a low spend limit,
+                    and never
+                    share a file that has your key typed in.</p>
+                <div class="g">
+                    <div class="f"><label>API key</label><input id="ak" type="password" autocomplete="off"
+                            placeholder="sk-ant-..."></div>
+                    <div class="f"><label>Model</label><input id="am" type="text" autocomplete="off"></div>
+                </div>
+                <div class="bar" style="margin:10px 0 0"><button class="p" id="ak-save">💾 Save key</button><button
+                        id="ak-del">🗑 Remove key</button><span id="ak-st"></span></div>
+            </div>
+        </div>
+        <section class="card af" id="af">
+            <details id="af-d">
+                <summary>
+                    <h2>✨ Auto-fill from my requirement <span
+                            style="font-weight:400;color:var(--mu);font-size:12px">(optional)</span></h2>
+                </summary>
+                <p class="sub" style="margin-bottom:10px">Type your requirement (Tamil / Tanglish / English) and/or
+                    attach a
+                    blueprint, an engineer's plan, a sketch or notes. Only the form fields below get updated; the prompt
+                    itself is
+                    never edited. Anything you don't mention keeps its current value.</p>
+                <textarea id="rq"
+                    placeholder="e.g. 30 x 40 plot, road on the north side, single floor, 3 bedrooms, only for own family, car parking inside"></textarea>
+                <div class="drop" id="dz"><label class="pick">🖼 Photo / image<input type="file" id="fi" multiple
+                            accept="image/*"></label><label class="pick">📄 PDF / text file<input type="file" id="fp"
+                            multiple accept="application/pdf,.pdf,.txt,.md,.csv,.json,text/plain"></label><br><span
+                        id="dzh">Images, PDF, TXT /
+                        MD / CSV</span><br><span style="font-size:12px">You can also drop files here or paste a
+                        screenshot.</span>
+                </div>
+                <div class="fchips" id="fch"></div>
+                <div class="bar" style="margin:10px 0 0"><button class="p" id="af-go" disabled>✨ Fill the
+                        form</button><button id="af-undo" style="display:none">↩ Undo auto-fill</button><button
+                        id="af-cc">📋 Copy prompt for Claude
+                        chat</button><span id="af-st"></span></div>
+                <p class="sub" style="margin:8px 0 0;font-size:12px">File picker not opening (some mobile apps block
+                    it)? Tap
+                    “Copy prompt for Claude chat”, send it in a normal Claude chat together with your files, then paste
+                    Claude’s
+                    JSON reply into the box above and tap Fill. A pasted JSON is applied directly, with the same checks.
+                </p>
+                <div id="af-res"></div>
+            </details>
+        </section>
+        <div id="form"></div>
+        <section class="card" id="ck">
+            <p class="sub" style="margin-bottom:10px">Finished the form? Claude reads every answer above and lists what
+                will
+                clash when your plan is created, and how to fix each one. Your answers are not changed.</p>
+            <div class="bar" style="margin:0 0 4px"><button class="p" id="ck-go">🔍 Check values with AI</button><span
+                    id="ck-st"></span></div>
+            <div id="ck-res"></div>
+        </section>
+        <section class="card" id="pr">
+            <h2>Your prompt</h2>
+            <div class="bar"><button class="p" id="cp">📋 Copy prompt</button><button class="p" id="en" disabled>✨
+                    Enhance for
+                    my plot</button><button id="un" style="display:none">↩ Restore original</button><button
+                    id="rs">Reset
+                    form</button><span id="st"></span></div>
+            <details id="enr"
+                style="margin:0 0 10px;font-size:12px;color:var(--mu);border:1px solid var(--ln);border-radius:8px;padding:8px 10px">
+                <summary style="cursor:pointer;color:var(--er)">⚠ Known risk: ✨ Enhance can change things the checker
+                    does not
+                    guard</summary>
+                <p style="margin:8px 0 4px"><b>What is checked.</b> After Enhance, the program only confirms that the
+                    “locked”
+                    lines still appear word-for-word (location, plot, plot extent, floors, one line per floor, setbacks
+                    +
+                    envelope, parking: 9 lines with the default 2 floors) and that the length is 300–30,000 characters.
+                    It also
+                    confirms that every ticked deliverable name and PART marker is still present. If those pass, the
+                    rewrite is
+                    accepted.</p>
+                <p style="margin:4px 0"><b>What is NOT checked</b> (Claude may reword, weaken or drop these, and the
+                    prompt is
+                    still accepted): budget and finish level, special requests, slope, coverage / FSI, new-or-old work
+                    and use,
+                    family / mobility, levels (plinth, floor height), stair details, outdoor / terrace / services,
+                    style, roof,
+                    wall / door / column / room-minimum values, blocked boundary sides, shafts, Vastu, and the mandatory
+                    rules
+                    themselves (STAIR LOCK, stack lock, no questions, number of designs, “nothing verified unless the
+                    script
+                    printed it”). The meta-prompt asks Claude to keep them, but no code enforces it.</p>
+                <p style="margin:4px 0"><b>Stale result.</b> If you edit the form or run Auto-fill while Enhance is
+                    still
+                    running, the old request is not cancelled. Its reply is checked against the old answers and then
+                    shown, so the
+                    enhanced prompt can reflect values you have already changed.</p>
+                <p style="margin:4px 0"><b>“Changes” list.</b> It is Claude's own summary of its edit, not a diff, so it
+                    can be
+                    incomplete.</p>
+                <p style="margin:4px 0 0"><b>What to do.</b> Treat Enhanced text as a draft: compare it with the
+                    original (↩
+                    Restore original) before copying, and re-check any parameter you care about that is not in the
+                    locked list
+                    above.</p>
+            </details>
+            <div id="blk"></div>
+            <div id="out"></div>
+            <div id="ch"></div>
+        </section>
+    </div>
+    <script src='script.js'></script>
+</body>
+
+</html>
