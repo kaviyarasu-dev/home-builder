@@ -97,7 +97,7 @@
                             <select id="mod-en" style="flex:1"></select>
                         </div>
                     </div>
-                    <div class="f" id="auto-text-ai-conf"><label>Automation Text AI</label>
+                    <div class="f" id="auto-text-ai-conf" style="display: none;"><label>Automation Text AI</label>
                         <div style="display:flex;gap:4px">
                             <select id="prov-run-txt" style="width:40%">
                                 <option value="anthropic">Claude</option>
@@ -127,7 +127,7 @@
             <button class="main-tab-btn active" data-target="tab-req">📋 Requirements</button>
             <!-- TODO (Technical): Optional - Add an indicator here if there are checker errors -->
             <button class="main-tab-btn" data-target="tab-chk-pr" id="tab-btn-chk">🔍 Check & Prompt</button>
-            <button class="main-tab-btn" data-target="tab-auto">🚀 Automation</button>
+            <button class="main-tab-btn" data-target="tab-auto" style="display: none;">🚀 Automation</button>
         </div>
 
         <!-- Tab 1: Requirements -->
@@ -247,7 +247,7 @@
             </section>
             <div class="bar" style="margin-top: 16px; justify-content: flex-end;">
                 <button id="next-step-auto-btn" class="p" onclick="document.querySelector('[data-target=\'tab-auto\']').click()"
-                    style="padding: 12px 20px; font-size: 15px;">Next Step: Automate Generation ➔</button>
+                    style="padding: 12px 20px; font-size: 15px; display: none;">Next Step: Automate Generation ➔</button>
             </div>
         </div> <!-- End Tab 2 -->
 
