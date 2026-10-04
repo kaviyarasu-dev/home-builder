@@ -215,13 +215,13 @@ $("ak-del-kie").onclick = () => delKey(AKEY_KIE, "ak-kie", "sk-kie-...");
 render();
 show();
 
-if (typeof ENABLE_AUTOMATION_FEATURE !== 'undefined' && !ENABLE_AUTOMATION_FEATURE) {
+if (typeof ENABLE_AUTOMATION_FEATURE !== 'undefined' && ENABLE_AUTOMATION_FEATURE) {
   const autoTabBtn = document.querySelector('.main-tab-btn[data-target="tab-auto"]');
-  if (autoTabBtn) autoTabBtn.style.display = "none";
+  if (autoTabBtn) autoTabBtn.style.display = "";
   const autoTextAiConf = document.getElementById("auto-text-ai-conf");
-  if (autoTextAiConf) autoTextAiConf.style.display = "none";
+  if (autoTextAiConf) autoTextAiConf.style.display = "flex";
   const nextStepBtn = document.getElementById("next-step-auto-btn");
-  if (nextStepBtn) nextStepBtn.style.display = "none";
+  if (nextStepBtn) nextStepBtn.style.display = "";
 }
 
 
