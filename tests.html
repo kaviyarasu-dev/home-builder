@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Verification & Testing - Part 6</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 20px; line-height: 1.5; background: #f9f9f9; }
+    .pass { color: green; font-weight: bold; }
+    .fail { color: red; font-weight: bold; }
+    .suite { margin-bottom: 20px; border: 1px solid #ddd; padding: 15px; border-radius: 8px; background: #fff; }
+    .suite h2 { margin-top: 0; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    ul { list-style: none; padding-left: 0; }
+    li { margin-bottom: 8px; padding: 8px; background: #fafafa; border-radius: 4px; border-left: 4px solid #ddd; }
+    li.pass { border-left-color: green; }
+    li.fail { border-left-color: red; }
+  </style>
+</head>
+<body>
+  <h1>Verification & Testing - Automation Pipeline</h1>
+  <div id="test-results"></div>
+
+  <!-- Mock DOM for dependencies -->
+  <div style="display:none">
+    <div id="ak-st"></div>
+    <div id="dzh"></div>
+    <button id="en"></button>
+    <button id="go"></button>
+    <div id="afr"></div>
+    <div id="run-dash"></div>
+    <button id="run-go"></button>
+    <button id="run-cancel"></button>
+    <div id="run-st"></div>
+    <div id="run-img-grid"></div>
+    <div id="run-out"></div>
+  </div>
+
+  <script src="js/constants.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/utils.js"></script>
+  <!-- Mock UI/Global functions needed by api.js and autofill-run.js -->
+  <script>
+    const $ = id => document.getElementById(id) || document.createElement('div');
+    const updKeyBtn = () => {};
+    const msg = () => {};
+    const afMsg = () => {};
+    const showRes = () => {};
+    const updGo = () => {};
+    const showFatalApiError = () => {};
+    const updateRunStatus = () => {};
+    const build = () => ({ text: "mock prompt" });
+    const tryJson = () => null;
+    const applyPatch = () => ({ list: [] });
+    const runGoBtn = document.getElementById("run-go");
+    const runCancelBtn = document.getElementById("run-cancel");
+    const en = document.getElementById("en");
+    const go = document.getElementById("go");
+    const afr = document.getElementById("afr");
+    const dzh = document.getElementById("dzh");
+    const rq = { value: "" };
+    let sample = {};
+    const BLK = false;
+    let FILES = [];
+  </script>
+  <script src="js/ai/api.js"></script>
+  <script src="js/ai/autofill-run.js"></script>
+  <script src="js/test.js"></script>
+</body>
+</html>

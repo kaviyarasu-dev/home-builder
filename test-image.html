@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Generation Tester</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; background: #121212; color: #fff; }
+        .card { background: #1e1e1e; padding: 1.5rem; border-radius: 8px; border: 1px solid #333; margin-bottom: 1rem; }
+        .f { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+        input, select, textarea, button { font: inherit; padding: 8px 12px; border: 1px solid #444; border-radius: 6px; background: #2a2a2a; color: #fff; }
+        button { background: #3b82f6; cursor: pointer; border: none; font-weight: 500; }
+        button:hover { background: #2563eb; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        img { max-width: 100%; border-radius: 8px; margin-top: 1rem; }
+        .log { margin-top: 1rem; font-family: monospace; color: #aaa; white-space: pre-wrap; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <h1>Image Generation Tester</h1>
+    <div class="card">
+        <div class="f">
+            <label>API Key (KIE)</label>
+            <input type="password" id="api-key" placeholder="sk-kie-...">
+        </div>
+        <div class="f">
+            <label>Model</label>
+            <select id="model-select"></select>
+        </div>
+        
+        <div id="dynamic-opts" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; background: #252525; padding: 10px; border-radius: 6px;"></div>
+
+        <div class="f">
+            <label>Prompt</label>
+            <textarea id="prompt" rows="3">A modern luxury villa exterior, 8k, photorealistic</textarea>
+        </div>
+        <button id="run-btn">Generate Image</button>
+        
+        <div id="output" style="margin-top: 1rem;">
+            <div id="status" class="log"></div>
+            <div id="image-container"></div>
+        </div>
+    </div>
+
+    <!-- Minimal required scripts to run the AI api -->
+    <script src="js/constants.js"></script>
+    <script src="js/ai/api.js"></script>
+    <script>
+        const apiKeyInput = document.getElementById("api-key");
+        const modelSelect = document.getElementById("model-select");
+        const promptInput = document.getElementById("prompt");
+        const runBtn = document.getElementById("run-btn");
+        const statusDiv = document.getElementById("status");
+        const imageContainer = document.getElementById("image-container");
+        const dynamicOptsDiv = document.getElementById("dynamic-opts");
+
+        // Load existing key if any
+        apiKeyInput.value = localStorage.getItem("homeplan-apikey-kie-v1") || "";
+
+        // Populate KIE models
+        const kieModels = MODELS.kie || [];
+        kieModels.forEach(m => {
+            const opt = document.createElement("option");
+            opt.value = m.id;
+            opt.textContent = m.name;
+            modelSelect.appendChild(opt);
+        });
+
+        // Render dynamic options
+        function renderOptions() {
+            dynamicOptsDiv.innerHTML = "";
+            const modId = modelSelect.value;
+            const modelDef = kieModels.find(m => m.id === modId);
+            if (!modelDef || !modelDef.options) return;
+
+            for (const [key, conf] of Object.entries(modelDef.options)) {
+                const wrapper = document.createElement("div");
+                wrapper.className = "f";
+                
+                const label = document.createElement("label");
+                label.textContent = key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+                wrapper.appendChild(label);
+
+                if (conf.values) {
+                    const select = document.createElement("select");
+                    select.id = "opt-" + key;
+                    select.setAttribute("data-type", "select");
+                    conf.values.forEach(val => {
+                        const opt = document.createElement("option");
+                        opt.value = val;
+                        opt.textContent = val;
+                        if (val === conf.default) opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                    wrapper.appendChild(select);
+                } else if (conf.type === "array") {
+                    const input = document.createElement("input");
+                    input.type = "text";
+                    input.id = "opt-" + key;
+                    input.setAttribute("data-type", "array");
+                    input.placeholder = "Comma separated...";
+                    wrapper.appendChild(input);
+                } else if (conf.min !== undefined && conf.max !== undefined) {
+                    const input = document.createElement("input");
+                    input.type = "number";
+                    input.id = "opt-" + key;
+                    input.setAttribute("data-type", "number");
+                    input.min = conf.min;
+                    input.max = conf.max;
+                    input.value = conf.default !== undefined ? conf.default : conf.min;
+                    wrapper.appendChild(input);
+                }
+                dynamicOptsDiv.appendChild(wrapper);
+            }
+        }
+        
+        modelSelect.addEventListener("change", renderOptions);
+        renderOptions();
+
+        runBtn.addEventListener("click", async () => {
+            const key = apiKeyInput.value.trim();
+            if (!key) return alert("Please enter KIE API key");
+            
+            // Save key
+            localStorage.setItem("homeplan-apikey-kie-v1", key);
+
+            const prompt = promptInput.value.trim();
+            if (!prompt) return alert("Please enter a prompt");
+
+            // Collect options
+            const imageOpts = {};
+            dynamicOptsDiv.querySelectorAll("select, input").forEach(el => {
+                const key = el.id.replace("opt-", "");
+                let val = el.value;
+                if (el.getAttribute("data-type") === "number") val = Number(val);
+                else if (el.getAttribute("data-type") === "array") val = val ? val.split(",").map(s => s.trim()).filter(Boolean) : null;
+                else if (val === "true") val = true;
+                else if (val === "false") val = false;
+                
+                if (val !== null && val !== "") imageOpts[key] = val;
+            });
+
+            runBtn.disabled = true;
+            statusDiv.textContent = "Creating task...";
+            imageContainer.innerHTML = "";
+
+            try {
+                // Initialize the AI API wrapper
+                const provider = makeApiSample("kie", key, modelSelect.value);
+                statusDiv.textContent += "\nSubmitting prompt: " + prompt;
+                
+                // Set up signal just in case (though not strictly required for test)
+                const abort = new AbortController();
+                
+                const res = await provider(prompt, { signal: abort.signal, imageOpts });
+                
+                statusDiv.textContent += "\n\nSuccess! Image URL received.";
+                imageContainer.innerHTML = `<a href="${res.text}" target="_blank"><img src="${res.text}" alt="Generated result" /></a>`;
+            } catch (e) {
+                console.error(e);
+                statusDiv.textContent += "\n\nError: " + (e.message || JSON.stringify(e));
+            } finally {
+                runBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
