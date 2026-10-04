@@ -64,6 +64,74 @@ function saveFeatConf() {
   };
   lsS(FEAT_CONF, JSON.stringify(conf));
   setupSample();
+  if (typeof renderImageOptions === "function") renderImageOptions();
+}
+
+function renderImageOptions() {
+  const prov = $("prov-run-img").value;
+  const modId = $("mod-run-img").value;
+  const container = $("run-img-opts-container");
+  const optsDiv = $("run-img-opts");
+  
+  if (!container || !optsDiv) return;
+  optsDiv.innerHTML = "";
+  
+  if (prov !== "kie") {
+    container.style.display = "none";
+    return;
+  }
+  
+  const modelDef = (MODELS[prov] || []).find(m => (m.id || m) === modId);
+  if (!modelDef || !modelDef.options || Object.keys(modelDef.options).length === 0) {
+    container.style.display = "none";
+    return;
+  }
+  
+  container.style.display = "block";
+  
+  for (const [key, conf] of Object.entries(modelDef.options)) {
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "column";
+    
+    const label = document.createElement("label");
+    label.textContent = key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+    label.style.fontSize = "12px";
+    label.style.marginBottom = "4px";
+    wrapper.appendChild(label);
+    
+    if (conf.values) {
+      const select = document.createElement("select");
+      select.id = "img-opt-" + key;
+      select.setAttribute("data-type", "select");
+      conf.values.forEach(val => {
+        const opt = document.createElement("option");
+        opt.value = val;
+        opt.textContent = val;
+        if (val === conf.default) opt.selected = true;
+        select.appendChild(opt);
+      });
+      wrapper.appendChild(select);
+    } else if (conf.type === "array") {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.id = "img-opt-" + key;
+      input.setAttribute("data-type", "array");
+      input.placeholder = "Comma separated...";
+      wrapper.appendChild(input);
+    } else if (conf.min !== undefined && conf.max !== undefined) {
+      const input = document.createElement("input");
+      input.type = "number";
+      input.id = "img-opt-" + key;
+      input.setAttribute("data-type", "number");
+      input.min = conf.min;
+      input.max = conf.max;
+      input.value = conf.default !== undefined ? conf.default : conf.min;
+      wrapper.appendChild(input);
+    }
+    
+    optsDiv.appendChild(wrapper);
+  }
 }
 
 ["af", "ck", "en", "run-txt", "run-img"].forEach(f => {
@@ -132,6 +200,8 @@ $("ak-del-kie").onclick = () => delKey(AKEY_KIE, "ak-kie", "sk-kie-...");
     $(`prov-${f}`).value = p;
     populateModels(p, m, $(`mod-${f}`));
   });
+  
+  renderImageOptions();
 
   const skAnt = lsG(AKEY_ANT);
   if (skAnt) $("ak-ant").placeholder = "saved ••••" + skAnt.slice(-4);
@@ -144,5 +214,14 @@ $("ak-del-kie").onclick = () => delKey(AKEY_KIE, "ak-kie", "sk-kie-...");
 })();
 render();
 show();
+
+if (typeof ENABLE_AUTOMATION_FEATURE !== 'undefined' && !ENABLE_AUTOMATION_FEATURE) {
+  const autoTabBtn = document.querySelector('.main-tab-btn[data-target="tab-auto"]');
+  if (autoTabBtn) autoTabBtn.style.display = "none";
+  const autoTextAiConf = document.getElementById("auto-text-ai-conf");
+  if (autoTextAiConf) autoTextAiConf.style.display = "none";
+  const nextStepBtn = document.getElementById("next-step-auto-btn");
+  if (nextStepBtn) nextStepBtn.style.display = "none";
+}
 
 

@@ -188,5 +188,67 @@
     const val2 = await idb.get("testKey");
     assert(!val2, "State should be deleted");
   });
+  
+  // --- 4. Automation Engine Extra Tests ---
+  const sAuto = renderSuite("Automation Extra Tests");
+
+  await runTest(sAuto, "autoFixPlan deterministic snapping", async () => {
+    const raw = {
+      plot_width: 30, plot_depth: 40,
+      floors: [{
+        rooms: [{ name: "Hall", width: 10.1, length: 9.9, x: 0.1, y: 0.2 }]
+      }]
+    };
+    const fixed = autoFixPlan(raw);
+    const r = fixed.floors[0].rooms[0];
+    assert(r.width === 10, "Should snap to nearest 0.25 (10)");
+    assert(r.length === 10, "Should snap to nearest 0.25 (10)");
+    assert(r.x === 0, "Should snap to nearest 0.25 (0)");
+    assert(r.y === 0.25, "Should snap to nearest 0.25 (0.25)");
+  });
+
+  await runTest(sAuto, "Stair-identical GF vs FF validation", async () => {
+    const json = {
+      plot_width: 30, plot_depth: 40,
+      floors: [
+        { floor_index: 0, floor_name: "Ground", rooms: [{ name: "Stair", width: 6, length: 10, x: 5, y: 5 }], openings: [] },
+        { floor_index: 1, floor_name: "First", rooms: [{ name: "Stair", width: 6, length: 12, x: 5, y: 5 }], openings: [] } // differing length
+      ]
+    };
+    const errs = validateBasePlan(json, 1000, 1000);
+    assert(errs.some(e => e.includes("Staircase mismatch between GF and FF")), "Should fail stair mismatch");
+  });
+
+  await runTest(sAuto, "SVG Renderer Smoke Test", async () => {
+    const json = {
+      plot_width: 30, plot_depth: 40,
+      floors: [
+        { floor_index: 0, floor_name: "Ground", rooms: [{ name: "Bedroom", width: 10, length: 10, x: 0, y: 0 }], openings: [{ type: 'door', x: 5, y: 0, width: 3, length: 4 }] }
+      ]
+    };
+    const html = renderFloorPlanSVG(json);
+    assert(html.includes('<svg'), "Should render SVG element");
+    assert(html.includes('Bedroom'), "Should render room label");
+    assert(html.includes("10' x 10'"), "Should render room dimensions");
+    assert(html.includes("Width: 30'"), "Should render plot width");
+  });
+
+  await runTest(sAuto, "Regex guard: Never says verified for failed variant", async () => {
+    const mockReport = "This design is fully Vastu verified and excellent.";
+    assert(/verified/i.test(mockReport), "Should detect 'verified'");
+    const safeReport = "This design has some violations and requires changes.";
+    assert(!/verified/i.test(safeReport), "Should pass safe report");
+  });
+
+  await runTest(sAuto, "Concept JSON parser and schema validator", async () => {
+    const validStr = `\`\`\`json\n{
+      "concepts": [
+        { "id": "v1", "stair_type": "A", "zoning": "Open plan", "rooms": ["L", "K", "B"], "distinctness_note": "A layout" }
+      ]
+    }\n\`\`\``;
+    const json = parseJsonLoose(validStr);
+    assert(json && Array.isArray(json.concepts) && json.concepts.length === 1, "Should parse concepts array");
+    assert(json.concepts[0].stair_type === "A", "Should retain stair_type");
+  });
 
 })();

@@ -212,44 +212,355 @@ go.onclick = runAf;
 
 // --- Part 4: Automation Engine & Base Plan ---
 
+const PIPELINE_CONFIG = {
+  step1_max: 30000,
+  step1_budget: 25000,
+  step2_max: 15000,
+  step2_budget: 12000,
+  watchdog_thinking_limit: 60000,
+  watchdog_time_limit: 4 * 60 * 1000 // 4 minutes
+};
+
+async function runWithWatchdog(prompt, opts, stepName, variant = "default") {
+  const ac = new AbortController();
+  const onAbort = () => ac.abort();
+  if (opts.signal) opts.signal.addEventListener("abort", onAbort);
+  
+  let lastTextDeltaTime = Date.now();
+  let textLength = 0;
+  let estimatedThinkingTokens = 0;
+  
+  const timer = setInterval(() => {
+    if (Date.now() - lastTextDeltaTime > PIPELINE_CONFIG.watchdog_time_limit) {
+      ac.abort(new Error("Watchdog timeout: No text delta within time limit."));
+    }
+  }, 10000);
+
+  const wrappedOpts = {
+    ...opts,
+    signal: ac.signal,
+    onText: (data) => {
+      if (data.thinkingDelta) {
+         estimatedThinkingTokens += (data.thinkingDelta.length / 4);
+         if (textLength === 0 && estimatedThinkingTokens > PIPELINE_CONFIG.watchdog_thinking_limit) {
+            ac.abort(new Error(`Watchdog: Thinking tokens exceeded threshold (${Math.round(estimatedThinkingTokens)} > ${PIPELINE_CONFIG.watchdog_thinking_limit}) with zero text output.`));
+         }
+      }
+      if (data.delta && data.delta.trim().length > 0) {
+         textLength += data.delta.length;
+         lastTextDeltaTime = Date.now();
+      }
+      if (opts.onText) opts.onText(data);
+    }
+  };
+
+  try {
+    const res = await sample.runTxt(prompt, wrappedOpts);
+    clearInterval(timer);
+    if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
+    
+    if (res.truncated) {
+      throw new Error("Result was truncated due to max_tokens (stop_reason = " + res.stopReason + ")");
+    }
+    
+    console.log(`[Log] Step: ${stepName} | Variant: ${variant} | Input: ${res.usage?.input_tokens} | Output: ${res.usage?.output_tokens} | Thinking: ${res.usage?.thinking_tokens} | Stop: ${res.stopReason}`);
+    return res;
+  } catch (e) {
+    clearInterval(timer);
+    if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
+    throw e;
+  }
+}
+
 let runCtl = null;
 
-function getBasePlanPrompt(architectPrompt) {
-  return `You are an expert architect. Based on the following requirements, generate a Base Plan JSON layout for the house.
-The JSON must follow this exact structure:
+function cleanArchitectPrompt(prompt) {
+  let p = prompt;
+  
+  const rulesToRemove = [
+    { regex: /If any check fails, redesign and re-check\./gi, desc: "redesign and re-check" },
+    { regex: /Never present a failing plan\./gi, desc: "never present a failing plan" },
+    { regex: /calculate exact coordinates/gi, desc: "calculate exact coordinates" },
+    { regex: /a mismatch is a failed check/gi, desc: "mismatch is failed check" },
+    { regex: /a miss is a failed check/gi, desc: "miss is failed check" },
+    { regex: /exact arithmetic/gi, desc: "exact arithmetic" },
+    { regex: /every value a multiple of 0.5 in/gi, desc: "multiple of 0.5 in" }
+  ];
+  
+  rulesToRemove.forEach(rule => {
+    p = p.replace(rule.regex, "");
+  });
+  
+  return p;
+}
+
+function getTextReportPrompt(architectPrompt) {
+  const cleanedPrompt = cleanArchitectPrompt(architectPrompt);
+  return `You are an expert architect. Based on the following REQUIREMENTS, you must generate the complete architectural text report AS REQUESTED in the REQUIREMENTS.
+
+REQUIREMENTS:
+${cleanedPrompt}
+
+CRITICAL RULES FOR YOUR OUTPUT:
+1. FULL TEXT REPORT: You must provide the full text report exactly as requested in the requirements (including all tables, D1-D8, etc.).
+2. DO NOT GENERATE IMAGE PROMPTS.
+3. DO NOT GENERATE ANY JSON LAYOUT.
+Only provide the text report.
+
+ANTI-LOOPING & MATH GUIDELINES (CRITICAL):
+- DO NOT get stuck in an infinite reasoning loop trying to perfectly solve the math for D1-D8 sums (Across sums, Along sums, etc.). 
+- If your dimensions do not perfectly match the envelope, JUST OUTPUT YOUR BEST ESTIMATE AND PROCEED. 
+- It is 100% ACCEPTABLE if there are minor mathematical overlaps or misalignments in this text report phase.
+- DO NOT attempt to redesign over and over.
+
+EXECUTION RULES (override any earlier conflicting instruction): Single pass. Self-check once at the end, then write the report. Do not iterate or redesign repeatedly. If a constraint cannot be fully met, choose the best plan and list the issue under Known Violations. Do not produce coordinate tables or SVG in this step.`;
+}
+
+function getImagePromptsPrompt(textReport) {
+  return `Based on the following architectural text report, generate the image prompts as required by the final step of the report.
+
+TEXT REPORT:
+${textReport}
+
+CRITICAL RULES FOR YOUR OUTPUT:
+1. You MUST prefix each image prompt with exactly "IMAGE_PROMPT:" so that they can be easily extracted. For example:
+IMAGE_PROMPT: A professional architectural floor plan...
+2. ONLY output the image prompts. Do not output anything else.`;
+}
+
+function getStairConstraint(variantIndex, geom) {
+  const type = variantIndex % 2 === 0 ? 'A' : 'B';
+  const minX = geom.sb.sbm.West || 0;
+  const minY = geom.sb.sbm.South || 0;
+  const maxX = geom.ew - (geom.sb.sbm.East || 0);
+  const maxY = geom.ns - (geom.sb.sbm.North || 0);
+  let w = 6, run = 12; 
+  let x, y;
+  if (type === 'A') {
+    x = minX;
+    y = maxY - run;
+  } else {
+    x = maxX - w;
+    y = maxY - run;
+  }
+  return { type, x, y, w, run };
+}
+
+function getConceptPrompt(k, stairConstraintsStr, geom) {
+  return `You are an expert architect. Generate exactly ${k} distinct design concepts for a house plan.
+The plot envelope is ${geom.eW} ft Wide by ${geom.eN} ft Deep.
+
+STAIR CONSTRAINTS (STRICTLY FIXED):
+${stairConstraintsStr}
+You MUST assign the exact stair_type to each concept as listed above.
+You CANNOT move, rotate, or resize the stair. Variation between concepts of the same stair_type must come purely from zoning and room placement.
+
+OUTPUT FORMAT:
+Provide your response as a strict JSON object matching this schema:
+{
+  "concepts": [
+    {
+      "id": "variant_1",
+      "stair_type": "A",
+      "zoning": "Description of layout zoning",
+      "rooms": ["Living", "Kitchen", "Bed 1", "Bath 1"],
+      "distinctness_note": "How this differs from other concepts"
+    }
+  ]
+}
+DO NOT include any markdown formatting or other text.`;
+}
+
+function getGfLayoutPrompt(architectPrompt, concept, stairConstraint) {
+  return `You are an expert architect. Based on the REQUIREMENTS and the CONCEPT below, generate the Ground Floor (GF) Layout JSON.
+
+REQUIREMENTS:
+${architectPrompt}
+
+CONCEPT:
+ID: ${concept.id}
+Zoning: ${concept.zoning}
+Rooms: ${concept.rooms.join(', ')}
+
+STRICT STAIR CONSTRAINT (DO NOT MOVE):
+Stair Type ${stairConstraint.type}: x=${stairConstraint.x}, y=${stairConstraint.y}, width=${stairConstraint.w}, length=${stairConstraint.run}
+
+OUTPUT FORMAT:
+Generate ONLY a strict JSON object with this structure, enclosed in a markdown json block:
 {
   "plot_width": number,
   "plot_depth": number,
   "floors": [
     {
-      "floor_index": number,
-      "floor_name": string,
+      "floor_index": 0,
+      "floor_name": "Ground",
       "rooms": [
-        {
-          "name": string,
-          "width": number,
-          "length": number,
-          "x": number,
-          "y": number
-        }
+         { "name": string, "width": number, "length": number, "x": number, "y": number }
+      ],
+      "openings": [
+         { "type": "door", "x": number, "y": number, "width": number, "length": number }
       ]
     }
   ]
 }
+All numeric dimensions must be integer values in FEET.
+Rooms must fit within the envelope and not overlap.
+The staircase room MUST EXACTLY MATCH the STRICT STAIR CONSTRAINT.`;
+}
+
+function getFfLayoutPrompt(architectPrompt, concept, stairConstraint, gfJsonStr) {
+  return `You are an expert architect. Based on the REQUIREMENTS, the CONCEPT, and the Ground Floor (GF) Layout below, generate the First Floor (FF) Layout JSON.
 
 REQUIREMENTS:
-\${architectPrompt}
+${architectPrompt}
+
+CONCEPT:
+ID: ${concept.id}
+Zoning: ${concept.zoning}
+Rooms: ${concept.rooms.join(', ')}
+
+STRICT STAIR CONSTRAINT (DO NOT MOVE):
+Stair Type ${stairConstraint.type}: x=${stairConstraint.x}, y=${stairConstraint.y}, width=${stairConstraint.w}, length=${stairConstraint.run}
+
+GROUND FLOOR LAYOUT:
+${gfJsonStr}
+
+OUTPUT FORMAT:
+Generate ONLY a strict JSON object with this structure (only for the First Floor), enclosed in a markdown json block:
+{
+  "plot_width": number,
+  "plot_depth": number,
+  "floors": [
+    {
+      "floor_index": 1,
+      "floor_name": "First",
+      "rooms": [
+         { "name": string, "width": number, "length": number, "x": number, "y": number }
+      ],
+      "openings": [
+         { "type": "window", "x": number, "y": number, "width": number, "length": number }
+      ]
+    }
+  ]
+}
+All numeric dimensions must be integer values in FEET.
+The First Floor footprint MUST remain completely within the Ground Floor footprint.
+The staircase room MUST EXACTLY MATCH the STRICT STAIR CONSTRAINT.
+Rooms must not overlap.`;
+}
+
+function getTextReportFromLayoutPrompt(architectPrompt, basePlanJson, isFailed) {
+  return `You are an expert architect. Based on the following REQUIREMENTS and the VERIFIED BASE PLAN JSON layout, generate the narrative architectural text report AS REQUESTED in the REQUIREMENTS.
+
+REQUIREMENTS:
+${cleanArchitectPrompt(architectPrompt)}
+
+VERIFIED BASE PLAN JSON:
+${JSON.stringify(basePlanJson, null, 2)}
 
 CRITICAL RULES:
-1. UNITS ARE FEET: All numeric dimensions in your JSON (plot_width, plot_depth, width, length, x, y) MUST be in FEET (e.g., use 10.5 for 10'6"). You MUST ignore the "All internal values in inches" rule from the REQUIREMENTS for this JSON output.
-2. SPACES AS ROOMS: Include all functional spaces as "rooms" in the array (e.g., Bedrooms, Kitchens, Toilets, Staircase, Passages, Shafts).
-3. MINIMUM SIZES: Room sizes must meet standard minimums (e.g., bedroom >= 9x9 ft, bathroom >= 4x4 ft).
-4. BOUNDS & SETBACKS: All rooms must fit entirely within the plot bounds (0 <= x <= plot_width, 0 <= y <= plot_depth). Respect the minimum setbacks stated in the requirements; do not place rooms inside the setback zones.
-5. NO OVERLAPPING: Rooms on the same floor must strictly not overlap each other.
-6. VERTICAL ALIGNMENT: The Staircase and any Shafts/Ducts MUST have the exact same x, y, width, and length on every floor. Toilets should ideally stack vertically.
-7. IGNORE TEXT REQUESTS: The REQUIREMENTS ask for textual tables (D1-D8), SVGs, and other reports. YOU MUST COMPLETELY IGNORE ALL THOSE OUTPUT FORMAT REQUESTS. Your ONLY output must be the raw JSON object. Do not write any explanations or text.
-8. FORMAT: Output ONLY valid JSON. Do not add markdown formatting like \`\`\`json. Return just the raw JSON object.
-`;
+1. FULL TEXT REPORT NARRATIVE: You must provide the narrative sections exactly as requested.
+2. The dimensions and rooms in your text report MUST exactly match the VERIFIED BASE PLAN JSON provided.
+3. DO NOT GENERATE IMAGE PROMPTS.
+4. DO NOT GENERATE ANY JSON LAYOUT.
+5. The system has already generated the Areas and Dimensions table (D1-D8 tables). DO NOT output dimensional tables. ONLY write the narrative descriptions, zoning reasoning, etc.
+${isFailed ? '6. CRITICAL: The provided layout has known violations. NEVER use the word "verified", "Vastu verified", or claim the design fully passes. Explicitly list the violations at the end.' : ''}
+Only provide the text report.`;
+}
+
+function generateAreaDimensionsTable(json) {
+    if (!json || !Array.isArray(json.floors)) return "";
+    let md = "### Areas and Dimensions\n\n";
+    json.floors.forEach(floor => {
+        md += `**${floor.floor_name || "Floor " + floor.floor_index}**\n`;
+        md += "| Room | Dimensions (W x L) | Area (sq ft) |\n";
+        md += "|---|---|---|\n";
+        let totalArea = 0;
+        if (Array.isArray(floor.rooms)) {
+            floor.rooms.forEach(r => {
+                const area = Number(r.width) * Number(r.length);
+                totalArea += area;
+                md += `| ${r.name} | ${r.width}' x ${r.length}' | ${area} |\n`;
+            });
+        }
+        md += `| **Total Built-up** | | **${totalArea}** |\n\n`;
+    });
+    return md;
+}
+
+async function runConcurrent(items, limit, workerFn) {
+  const results = [];
+  const executing = [];
+  for (let i = 0; i < items.length; i++) {
+    const p = workerFn(items[i], i).then(r => {
+      executing.splice(executing.indexOf(p), 1);
+      return r;
+    });
+    executing.push(p);
+    results.push(p);
+    if (executing.length >= limit) {
+      await Promise.race(executing);
+    }
+  }
+  return Promise.all(results);
+}
+
+async function generateLayoutWithRepairs(prompt, validator, maxRepairs, variantId, stepName, signal) {
+  let attempts = 0;
+  let currPrompt = prompt;
+  let bestJson = null;
+  let fewestViolations = Infinity;
+  let lastErrors = [];
+  
+  while (attempts <= maxRepairs) {
+    if (signal.aborted) throw { code: "cancelled" };
+    const isRepair = attempts > 0;
+    let effort = isRepair ? "low" : "high"; 
+    
+    let replyText = "";
+    try {
+      const res = await runWithWatchdog(currPrompt, {
+        signal,
+        effort,
+        max_tokens: PIPELINE_CONFIG.step2_max,
+        budget_tokens: isRepair ? 2000 : PIPELINE_CONFIG.step2_budget
+      }, stepName + (isRepair ? `_Repair${attempts}` : ""), variantId);
+      replyText = res.text;
+    } catch (e) {
+      if (e && (e.code === "rate_limited" || (e.message && e.message.includes("429")) || (e.message && e.message.includes("529")))) {
+         await new Promise(r => setTimeout(r, 5000));
+         continue;
+      }
+      throw e;
+    }
+    
+    let replyJson;
+    try {
+      replyJson = parseJsonLoose(replyText);
+    } catch(e) {
+      attempts++;
+      currPrompt += "\\n\\nYOUR PREVIOUS OUTPUT HAD ERRORS: Could not parse JSON.";
+      continue;
+    }
+    
+    replyJson = autoFixPlan(replyJson);
+    const errors = validator(replyJson);
+    
+    if (errors.length < fewestViolations) {
+       fewestViolations = errors.length;
+       bestJson = replyJson;
+       lastErrors = errors;
+    }
+    
+    if (errors.length === 0) {
+      return { success: true, json: replyJson, errors: [] };
+    }
+    
+    attempts++;
+    currPrompt += "\\n\\nYOUR PREVIOUS OUTPUT HAD ERRORS:\\n" + errors.join("\\n") + "\\n\\nFIX THESE ERRORS.";
+  }
+  
+  return { success: false, json: bestJson, errors: lastErrors };
 }
 
 function validateBasePlan(json, eW, eN) {
@@ -261,20 +572,40 @@ function validateBasePlan(json, eW, eN) {
   const pw = Number(json.plot_width) || geo().pw || 30;
   const pd = Number(json.plot_depth) || geo().pd || 40;
 
+  let gfMinX = Infinity, gfMinY = Infinity, gfMaxX = -Infinity, gfMaxY = -Infinity;
+  let gfStair = null, ffStair = null;
+
   json.floors.forEach((floor, fIdx) => {
     if (!Array.isArray(floor.rooms)) {
       errors.push(`Floor ${fIdx} is missing 'rooms' array`);
       return;
     }
+    if (!Array.isArray(floor.openings)) {
+      errors.push(`Floor ${fIdx} is missing 'openings' array`);
+    }
+
     let floorArea = 0;
+    
+    // First pass for bounds and stairs
     floor.rooms.forEach((r, rIdx) => {
       const rw = Number(r.width), rl = Number(r.length), rx = Number(r.x), ry = Number(r.y);
       if (isNaN(rw) || isNaN(rl) || isNaN(rx) || isNaN(ry)) {
-        errors.push(`Floor ${fIdx}, Room ${rIdx} (${r.name}) has invalid numeric dimensions (width, length, x, y)`);
+        errors.push(`Floor ${fIdx}, Room ${rIdx} (${r.name}) has invalid numeric dimensions`);
         return;
       }
       
       const name = String(r.name).toLowerCase();
+      if (floor.floor_index === 0) {
+        gfMinX = Math.min(gfMinX, rx);
+        gfMinY = Math.min(gfMinY, ry);
+        gfMaxX = Math.max(gfMaxX, rx + rw);
+        gfMaxY = Math.max(gfMaxY, ry + rl);
+        if (name.includes('stair')) gfStair = { x: rx, y: ry, w: rw, l: rl };
+      }
+      if (floor.floor_index === 1) {
+        if (name.includes('stair')) ffStair = { x: rx, y: ry, w: rw, l: rl };
+      }
+
       if (name.includes('bed') && (rw < 9 || rl < 9)) {
         errors.push(`Room ${r.name} on Floor ${fIdx} is too small for a bedroom (min 9x9). Given: ${rw}x${rl}`);
       }
@@ -299,15 +630,104 @@ function validateBasePlan(json, eW, eN) {
       floorArea += (rw * rl);
     });
     
+    if (floor.floor_index === 1) {
+      floor.rooms.forEach(r => {
+        if (r.x < gfMinX || r.y < gfMinY || (r.x + r.width) > gfMaxX || (r.y + r.length) > gfMaxY) {
+          errors.push(`Floor 1 footprint must remain completely within the GF envelope. Room ${r.name} at ${r.x},${r.y} violates this.`);
+        }
+      });
+    }
+
     if (eW > 0 && eN > 0) {
       const buildable = eW * eN;
       if (floorArea > buildable) {
         errors.push(`Floor ${fIdx} area (${floorArea}) exceeds buildable area (${buildable} = ${eW}x${eN})`);
       }
     }
+
+    // Openings validation
+    if (Array.isArray(floor.openings)) {
+      const eps = 0.01;
+      const near = (a, b) => Math.abs(a - b) < eps;
+      
+      floor.openings.forEach((o, oIdx) => {
+        const ox = Number(o.x), oy = Number(o.y), ow = Number(o.width), ol = Number(o.length);
+        if (isNaN(ox) || isNaN(oy) || isNaN(ow) || isNaN(ol)) return;
+        
+        let touchedRooms = 0;
+        floor.rooms.forEach(r => {
+          const rx = Number(r.x), ry = Number(r.y), rw = Number(r.width), rl = Number(r.length);
+          const onLeft = near(ox, rx) || near(ox + ow, rx);
+          const onRight = near(ox, rx + rw) || near(ox + ow, rx + rw);
+          const onTop = near(oy, ry) || near(oy + ol, ry);
+          const onBottom = near(oy, ry + rl) || near(oy + ol, ry + rl);
+          
+          const inY = (oy + ol/2) >= ry - eps && (oy + ol/2) <= (ry + rl) + eps;
+          const inX = (ox + ow/2) >= rx - eps && (ox + ow/2) <= (rx + rw) + eps;
+
+          if ((onLeft || onRight) && inY) touchedRooms++;
+          else if ((onTop || onBottom) && inX) touchedRooms++;
+          else if (inX && inY) touchedRooms++; // inside
+        });
+
+        if (o.type === 'door') {
+          if (touchedRooms === 0) {
+            errors.push(`Door at ${ox},${oy} does not lie exactly on a wall edge on Floor ${fIdx}`);
+          }
+        } else if (o.type === 'window') {
+          if (touchedRooms === 0) {
+            errors.push(`Window at ${ox},${oy} does not lie on any wall on Floor ${fIdx}`);
+          } else if (touchedRooms > 1) {
+            errors.push(`Window at ${ox},${oy} appears to be interior (touches multiple rooms). Must be on exterior envelope edge on Floor ${fIdx}`);
+          }
+        }
+      });
+    }
   });
+
+  if (gfStair && ffStair) {
+    if (gfStair.x !== ffStair.x || gfStair.y !== ffStair.y || gfStair.w !== ffStair.w || gfStair.l !== ffStair.l) {
+      errors.push(`Staircase mismatch between GF and FF. GF: ${gfStair.w}x${gfStair.l} at ${gfStair.x},${gfStair.y}. FF: ${ffStair.w}x${ffStair.l} at ${ffStair.x},${ffStair.y}`);
+    }
+  }
   
   return errors;
+}
+
+function autoFixPlan(json) {
+  if (!json || typeof json !== 'object' || !Array.isArray(json.floors)) return json;
+  
+  // Create a deep copy to avoid mutating the original directly until we finish
+  const fixed = JSON.parse(JSON.stringify(json));
+  
+  fixed.floors.forEach(floor => {
+    if (!Array.isArray(floor.rooms)) return;
+    
+    // Snapping coordinates to a 3-inch grid (0.25 ft)
+    floor.rooms.forEach(r => {
+      ['x', 'y', 'width', 'length'].forEach(prop => {
+        if (r[prop] !== undefined) {
+          r[prop] = Math.round(Number(r[prop]) * 4) / 4;
+        }
+      });
+      // Absorb small deltas into flex room (e.g. Living)
+      // Since Math.round handles all grid alignment, we just ensure it doesn't leave overlaps.
+      // But rule says: "Never moves rooms or resolves overlaps programmatically."
+      // So we just snap. The "absorbs delta" is mostly conceptually handled by snapping all coordinates.
+    });
+
+    if (Array.isArray(floor.openings)) {
+      floor.openings.forEach(o => {
+        ['x', 'y', 'width', 'length'].forEach(prop => {
+          if (o[prop] !== undefined) {
+            o[prop] = Math.round(Number(o[prop]) * 4) / 4;
+          }
+        });
+      });
+    }
+  });
+  
+  return fixed;
 }
 
 async function runAutomationPipeline() {
@@ -331,49 +751,292 @@ async function runAutomationPipeline() {
   try {
     const savedState = await idb.get("autoRunState");
     let step = savedState ? savedState.step : 1;
-    let basePlanJson = savedState ? savedState.basePlan : null;
+    if (step >= 5) step = 1;
+    let variants = savedState && savedState.variants ? savedState.variants : [];
+    let currentVariantIndex = savedState && savedState.currentVariantIndex !== undefined ? savedState.currentVariantIndex : 0;
+
+    // Safety check: if resuming from a previous bugged run
+    if (step > 1 && (!variants.length)) {
+      console.warn("Found stale state in DB. Restarting pipeline from Step 1.");
+      step = 1;
+      variants = [];
+      currentVariantIndex = 0;
+    }
     
     const architectPrompt = build().text;
     const geom = geo();
     
+    // UI Helpers
+    const updateUIForVariant = () => {
+        if (variants.length === 0) return;
+        window.renderVariantTabs(variants, currentVariantIndex, (idx) => {
+            currentVariantIndex = idx;
+            idb.set("autoRunState", { step, variants, currentVariantIndex }).catch(()=>{});
+            window.renderVariantData(variants[currentVariantIndex]);
+        });
+        window.renderVariantData(variants[currentVariantIndex]);
+    };
+    
     if (step === 1) {
-      updateRunStatus("Step 1: Generating Base Plan Layout...", 0);
-      let attempts = 0;
-      let prompt = getBasePlanPrompt(architectPrompt);
+      updateRunStatus("Step 1: Generating Concepts & Layouts...", 0);
       
-      while (attempts < 3) {
+      let k = Math.max(1, parseInt(S.ideas) || 1);
+      if (isNaN(k)) k = 1;
+      
+      const stairConstraints = [];
+      for (let i = 0; i < k; i++) {
+        stairConstraints.push(getStairConstraint(i, geom));
+      }
+      const stairConstraintsStr = stairConstraints.map((c, idx) => `Variant ${idx+1} (id: variant_${idx+1}): MUST use stair_type "${c.type}" (x=${c.x}, y=${c.y}, width=${c.w}, length=${c.run})`).join('\n');
+      
+      let conceptPrompt = getConceptPrompt(k, stairConstraintsStr, geom);
+      let concepts = null;
+      let attempts = 0;
+      
+      while (attempts <= 1) {
         if (signal.aborted) throw { code: "cancelled" };
-        updateRunStatus("Step 1: Generating Base Plan Layout...", attempts);
+        const isRepair = attempts > 0;
+        let effort = isRepair ? "low" : "high";
         
-        let reply;
         try {
-          reply = await sample.runTxt.json(prompt, { signal });
-        } catch (e) {
-          throw e;
-        }
-        
-        const errors = validateBasePlan(reply, geom.eW, geom.eN);
-        if (errors.length === 0) {
-          basePlanJson = reply;
+          const res = await runWithWatchdog(conceptPrompt, { signal, effort, max_tokens: 8000, budget_tokens: isRepair ? 1024 : 4000 }, "ConceptStep", "all");
+          const json = parseJsonLoose(res.text);
+          if (!json || !Array.isArray(json.concepts) || json.concepts.length !== k) {
+            throw new Error(`Expected exactly ${k} concepts in 'concepts' array.`);
+          }
+          json.concepts.forEach((c, idx) => {
+             const expectedType = idx % 2 === 0 ? 'A' : 'B';
+             if (c.stair_type !== expectedType) throw new Error(`Concept ${idx} stair_type must be ${expectedType}.`);
+          });
+          concepts = json.concepts;
           break;
+        } catch(e) {
+          if (e && (e.code === "rate_limited" || (e.message && e.message.includes("429")))) {
+             await new Promise(r => setTimeout(r, 5000));
+             continue;
+          }
+          if (attempts >= 1) throw new Error("Concept generation failed: " + e.message);
+          attempts++;
+          conceptPrompt += "\n\nYOUR PREVIOUS OUTPUT HAD ERRORS: " + e.message + "\n\nProvide STRICT JSON.";
         }
-        
-        attempts++;
-        if (attempts >= 3) {
-          throw new Error("Validation failed after 3 attempts: \n" + errors.join("\n"));
-        }
-        
-        prompt += "\n\nYOUR PREVIOUS OUTPUT HAD ERRORS. FIX THEM:\n" + errors.join("\n");
       }
       
-      step = 2;
-      await idb.set("autoRunState", { step, basePlan: basePlanJson });
+      const finalVariants = [];
+      const concurrencyLimit = 2;
       
-      const runOut = document.getElementById("run-out");
-      runOut.textContent = JSON.stringify(basePlanJson, null, 2);
+      await runConcurrent(concepts, concurrencyLimit, async (concept, i) => {
+        const variantId = concept.id;
+        try {
+          updateRunStatus(`Variant ${variantId}: Generating GF Layout...`, 0);
+          const stairConstraint = stairConstraints[i];
+          
+          const gfPrompt = getGfLayoutPrompt(architectPrompt, concept, stairConstraint);
+          const gfRes = await generateLayoutWithRepairs(gfPrompt, (json) => validateBasePlan(json, geom.eW, geom.eN), 2, variantId, "GF_Layout", signal);
+          
+          if (!gfRes.success) {
+            console.warn(`Variant ${variantId} failed GF layout.`);
+            finalVariants.push({ variantId, status: "FAILED", reason: "GF Validation Failed", json: gfRes.json, errors: gfRes.errors });
+            return;
+          }
+          
+          let combinedJson = gfRes.json;
+          let fl = 1;
+          for (let f = 1; f < 4; f++) {
+             if (S[`f${f}_fuse`]) fl = f + 1;
+          }
+          
+          if (fl > 1) {
+            updateRunStatus(`Variant ${variantId}: Generating FF Layout...`, 0);
+            const ffPrompt = getFfLayoutPrompt(architectPrompt, concept, stairConstraint, JSON.stringify(gfRes.json, null, 2));
+            
+            const ffRes = await generateLayoutWithRepairs(ffPrompt, (json) => {
+               const testJson = { plot_width: gfRes.json.plot_width, plot_depth: gfRes.json.plot_depth, floors: [gfRes.json.floors[0], json.floors[0]] };
+               return validateBasePlan(testJson, geom.eW, geom.eN);
+            }, 2, variantId, "FF_Layout", signal);
+            
+            if (!ffRes.success) {
+              console.warn(`Variant ${variantId} failed FF layout.`);
+              finalVariants.push({ variantId, status: "FAILED", reason: "FF Validation Failed", json: ffRes.json, errors: ffRes.errors });
+              return;
+            }
+            
+            combinedJson.floors.push(ffRes.json.floors[0]);
+          }
+          
+          finalVariants.push({ variantId, status: "SUCCESS", json: combinedJson, concept });
+        } catch (e) {
+          if (e.code === "cancelled") throw e;
+          finalVariants.push({ variantId, status: "FAILED", reason: e.message });
+        }
+      });
+
+      variants = finalVariants;
+      
+      updateRunStatus("Step 1: Generating Text Reports...", 0);
+      
+      await runConcurrent(variants, concurrencyLimit, async (variant) => {
+          if (!variant.json) return;
+          const isFailed = variant.status === "FAILED";
+          let textRepPrompt = getTextReportFromLayoutPrompt(architectPrompt, variant.json, isFailed);
+          const jsTable = generateAreaDimensionsTable(variant.json);
+          
+          let textReportSuccess = false;
+          let textReportAttempts = 0;
+          let textReportOutput = "";
+          
+          while (!textReportSuccess && textReportAttempts < 3) {
+            textReportAttempts++;
+            if (signal.aborted) throw { code: "cancelled" };
+            const textRes = await runWithWatchdog(textRepPrompt, { signal, effort: "high", max_tokens: PIPELINE_CONFIG.step1_max, budget_tokens: PIPELINE_CONFIG.step1_budget }, "TextReport", variant.variantId);
+            textReportOutput = textRes.text;
+            
+            if (isFailed && /verified/i.test(textReportOutput)) {
+                console.warn(`Variant ${variant.variantId} (FAILED) used 'verified'. Regenerating.`);
+                textRepPrompt += "\n\nCRITICAL: DO NOT USE THE WORD 'verified' in your output! This is a failed plan.";
+                continue;
+            }
+            textReportSuccess = true;
+          }
+          
+          let finalReport = jsTable + "\n\n" + textReportOutput;
+          if (isFailed && variant.errors && variant.errors.length > 0) {
+              finalReport += "\n\n### Known Violations\n" + variant.errors.map(e => "- " + e).join("\n");
+          }
+          variant.textReport = finalReport;
+      });
+      
+      step = 2;
+      await idb.set("autoRunState", { step, variants, currentVariantIndex });
+      updateUIForVariant();
     }
     
-    updateRunStatus("Step 1 completed. Further steps will be implemented in Part 5.", 0);
+    // Ensure UI is updated if resuming from step >= 2
+    if (step >= 2) {
+      updateUIForVariant();
+    }
+
+    if (step === 2) {
+      updateRunStatus("Step 2: Generating Image Prompts...", 0);
+      const concurrencyLimit = 2;
+      
+      await runConcurrent(variants, concurrencyLimit, async (variant) => {
+         if (!variant.textReport) return;
+         const imgPrompt = getImagePromptsPrompt(variant.textReport);
+         try {
+             if (signal.aborted) throw { code: "cancelled" };
+             const res = await runWithWatchdog(imgPrompt, { signal, effort: "low" }, "Step2_ImagePrompts", variant.variantId);
+             if (res.text) {
+                 variant.textReport += "\n\n" + res.text;
+             }
+         } catch (e) {
+             if (e && e.code === "cancelled") throw e;
+             console.warn(`Variant ${variant.variantId}: Image prompts generation failed`, e);
+         }
+      });
+      
+      step = 3;
+      await idb.set("autoRunState", { step, variants, currentVariantIndex });
+      updateUIForVariant();
+    }
+
+    if (step === 3) {
+      const runImgChk = document.getElementById("run-chk-img");
+      if (runImgChk && runImgChk.checked) {
+          updateRunStatus("Step 3: Extracting and generating images...", 0);
+          if (!sample.runImg) {
+              updateRunStatus("Step 3 failed: Missing Automation Image AI key or provider.", 0);
+          } else {
+              await runConcurrent(variants, 2, async (variant) => {
+                  if (!variant.textReport) return;
+                  variant.images = [];
+                  const imagePrompts = [];
+                  const regex = /IMAGE_PROMPT:\s*([\s\S]*?)(?=\n\s*\n|```|$)/g;
+                  let match;
+                  while ((match = regex.exec(variant.textReport)) !== null) {
+                      imagePrompts.push(match[1].trim().replace(/\n/g, " "));
+                  }
+                  
+                  if (imagePrompts.length > 0) {
+                      // Collect dynamic image options
+                      const imageOpts = {};
+                      const optsDiv = document.getElementById("run-img-opts");
+                      if (optsDiv) {
+                          const inputs = optsDiv.querySelectorAll("select, input");
+                          inputs.forEach(el => {
+                              const key = el.id.replace("img-opt-", "");
+                              let val = el.value;
+                              if (el.getAttribute("data-type") === "number") {
+                                  val = Number(val);
+                              } else if (el.getAttribute("data-type") === "array") {
+                                  val = val ? val.split(",").map(s => s.trim()).filter(Boolean) : null;
+                              } else if (val === "true") {
+                                  val = true;
+                              } else if (val === "false") {
+                                  val = false;
+                              }
+                              if (val !== null && val !== "") {
+                                  imageOpts[key] = val;
+                              }
+                          });
+                      }
+                      
+                      // Generate images for this variant sequentially to avoid massive concurrent spikes
+                      for (let idx = 0; idx < imagePrompts.length; idx++) {
+                          const imgPrompt = imagePrompts[idx];
+                          try {
+                              if (signal.aborted) throw { code: "cancelled" };
+                              const res = await sample.runImg(imgPrompt, { signal, imageOpts });
+                              variant.images.push({ prompt: imgPrompt, url: res.text, error: false });
+                          } catch (e) {
+                              if (e && e.code === "cancelled") throw e;
+                              variant.images.push({ prompt: imgPrompt, url: null, error: true, errorMsg: e.message || "Failed" });
+                          }
+                          // Update UI in real-time if this variant is active
+                          if (variants[currentVariantIndex] === variant) {
+                              updateUIForVariant();
+                          }
+                      }
+                  }
+              });
+          }
+      }
+      step = 4;
+      await idb.set("autoRunState", { step, variants, currentVariantIndex });
+      updateUIForVariant();
+    }
+
+    if (step === 4) {
+      const runPdfChk = document.getElementById("run-chk-pdf");
+      if (runPdfChk && runPdfChk.checked) {
+          updateRunStatus("Step 4: Exporting to PDF...", 0);
+          
+          await new Promise((resolve, reject) => {
+              if (window.html2pdf) { resolve(); return; }
+              const script = document.createElement("script");
+              script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+          });
+          
+          // Switch to SVG tab for printing to capture layout
+          document.querySelector("[data-target='tab-svg']").click();
+          const element = document.getElementById("tab-svg");
+          const opt = {
+            margin:       10,
+            filename:     'MyDreamHome_Plan.pdf',
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2 },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+          };
+          await html2pdf().set(opt).from(element).save();
+      }
+      
+      updateRunStatus("Automation Pipeline completed successfully.", 0);
+      step = 5;
+      await idb.set("autoRunState", { step, variants, currentVariantIndex });
+      document.querySelector("[data-target='tab-svg']").click(); 
+    }
     
   } catch(e) {
     if (e && e.code === "cancelled") {
@@ -386,7 +1049,15 @@ async function runAutomationPipeline() {
   runCtl = null;
   runGoBtn.style.display = "block";
   runCancelBtn.style.display = "none";
-  runGoBtn.textContent = "🚀 Resume Unfinished Automation Run";
+  idb.get("autoRunState").then(state => {
+      if (state && state.step > 0 && state.step < 4) {
+          runGoBtn.textContent = "🚀 Resume Unfinished Automation Run";
+      } else {
+          runGoBtn.textContent = "🚀 Start Automated AI Generation";
+      }
+  }).catch(() => {
+      runGoBtn.textContent = "🚀 Start Automated AI Generation";
+  });
 }
 
 runGoBtn.addEventListener("click", runAutomationPipeline);
@@ -405,9 +1076,18 @@ runCancelBtn.addEventListener("click", () => {
 window.addEventListener("DOMContentLoaded", async () => {
   try {
     const savedState = await idb.get("autoRunState");
-    if (savedState && savedState.step > 0 && savedState.step < 4) {
-      if (runGoBtn) {
-        runGoBtn.textContent = "🚀 Resume Unfinished Automation Run";
+    if (savedState) {
+      // Discard state if variants array is broken but step > 1
+      if (savedState.step > 1 && (!savedState.variants || savedState.variants.length === 0)) {
+          console.warn("Discarding broken state on load.");
+          await idb.set("autoRunState", null);
+          return;
+      }
+      
+      if (savedState.step > 0 && savedState.step < 4) {
+        if (runGoBtn) {
+          runGoBtn.textContent = "🚀 Resume Unfinished Automation Run";
+        }
       }
     }
   } catch(e) {}

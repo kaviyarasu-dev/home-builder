@@ -97,7 +97,7 @@
                             <select id="mod-en" style="flex:1"></select>
                         </div>
                     </div>
-                    <div class="f"><label>Automation Text AI</label>
+                    <div class="f" id="auto-text-ai-conf"><label>Automation Text AI</label>
                         <div style="display:flex;gap:4px">
                             <select id="prov-run-txt" style="width:40%">
                                 <option value="anthropic">Claude</option>
@@ -105,15 +105,6 @@
                             </select>
                             <!-- TODO (Technical): Populate these options dynamically from api.js -->
                             <select id="mod-run-txt" style="flex:1"></select>
-                        </div>
-                    </div>
-                    <div class="f" style="grid-column: 1 / -1;"><label>Automation Image AI</label>
-                        <div style="display:flex;gap:4px">
-                            <select id="prov-run-img" style="width:40%">
-                                <option value="openai">OpenAI</option>
-                                <option value="kie">KIE.ai</option>
-                            </select>
-                            <select id="mod-run-img" style="flex:1"></select>
                         </div>
                     </div>
                 </div>
@@ -199,8 +190,8 @@
             </section>
             <section class="card" id="pr">
                 <h2>Your prompt</h2>
-                <div class="bar"><button class="p" id="vp">👁️ View prompt</button><button class="p" id="cp">📋 Copy
-                        prompt</button><button class="p" id="en" disabled>✨
+                <div class="bar"><button class="p" id="cp">📋 Copy
+                        prompt</button><button class="p" id="vp">👁️ View prompt</button><button class="p" id="en" disabled>✨
                         Enhance for
                         my plot</button><button id="un" style="display:none">↩ Restore original</button><button
                         id="rs">Reset
@@ -255,7 +246,7 @@
                 <div id="blk"></div>
             </section>
             <div class="bar" style="margin-top: 16px; justify-content: flex-end;">
-                <button class="p" onclick="document.querySelector('[data-target=\'tab-auto\']').click()"
+                <button id="next-step-auto-btn" class="p" onclick="document.querySelector('[data-target=\'tab-auto\']').click()"
                     style="padding: 12px 20px; font-size: 15px;">Next Step: Automate Generation ➔</button>
             </div>
         </div> <!-- End Tab 2 -->
@@ -280,6 +271,27 @@
                     </div>
                 </div>
 
+                <div class="g" style="margin-bottom: 14px">
+                    <div class="f wd">
+                        <label>Image AI Model</label>
+                        <div style="display:flex;gap:8px">
+                            <select id="prov-run-img" style="width:30%">
+                                <option value="openai">OpenAI</option>
+                                <option value="kie">KIE.ai</option>
+                            </select>
+                            <select id="mod-run-img" style="flex:1"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="g" id="run-img-opts-container" style="margin-bottom: 14px; display:none;">
+                    <div class="f wd">
+                        <label>Image Generation Options</label>
+                        <div id="run-img-opts" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px;">
+                        </div>
+                    </div>
+                </div>
+
                 <div class="bar" style="margin-bottom: 0; display:flex; gap:8px;">
                     <button class="p" id="run-go" style="flex:1; padding: 14px; font-size: 16px;">🚀 Start
                         Automated AI Generation</button>
@@ -294,14 +306,22 @@
                 <!-- Results Dashboard (Hidden initially, shown after click) -->
                 <div id="run-dash"
                     style="display:none; margin-top: 16px; border-top: 1px solid var(--ln); padding-top: 16px;">
+                    <div id="run-variant-tabs" class="tabs" style="display:none; margin-bottom: 12px; border-bottom: none;"></div>
                     <div class="tabs">
-                        <button class="tab-btn active" data-target="tab-text">📄 Text Report</button>
+                        <button class="tab-btn active" data-target="tab-svg">📐 Plan SVG</button>
+                        <button class="tab-btn" data-target="tab-text">📄 Text Report</button>
                         <!-- TODO (Technical): Update the count in the tab dynamically once images are generated -->
                         <button class="tab-btn" data-target="tab-imgs">🖼️ Images (0)</button>
                         <button class="tab-btn" data-target="tab-chat">💬 Chat</button>
                     </div>
 
-                    <div id="tab-text" class="tab-content" style="display:block;">
+                    <div id="tab-svg" class="tab-content" style="display:block;">
+                        <div id="run-svg-out" style="padding: 14px; background: var(--bg); border: 1px solid var(--ln); border-radius: 8px;">
+                            <i>Plan SVG will appear here once generated...</i>
+                        </div>
+                    </div>
+
+                    <div id="tab-text" class="tab-content" style="display:none;">
                         <!-- TODO (Technical): Render the markdown/text response from the AI here -->
                         <div id="run-out"
                             style="white-space: pre-wrap; font: 13.5px/1.6 system-ui; max-height: 500px; overflow-y: auto; background: var(--bg); padding: 14px; border-radius: 8px; border: 1px solid var(--ln);">
@@ -346,6 +366,7 @@
     <script src="js/ai/autofill-run.js"></script>
     <script src="js/ai/checker.js"></script>
     <script src="js/ai/api.js"></script>
+    <script src="js/ai/svg-renderer.js"></script>
     <script src="js/main.js"></script>
 </body>
 

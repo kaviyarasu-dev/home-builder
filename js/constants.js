@@ -1,3 +1,5 @@
+const ENABLE_AUTOMATION_FEATURE = false;
+
 const KEY = "homeplan-prompt-v4",
   Y = "Yes",
   N = "No",

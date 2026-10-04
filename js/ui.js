@@ -468,6 +468,60 @@ window.updateRunStatus = function(stepMsg, attempt) {
   runSt.style.color = attempt > 0 ? "var(--er)" : "var(--mu)";
 };
 
+window.renderVariantTabs = function(variants, activeIdx, onSelect) {
+  const container = document.getElementById("run-variant-tabs");
+  if (!container) return;
+  if (!variants || variants.length <= 1) {
+    container.style.display = "none";
+    return;
+  }
+  container.style.display = "flex";
+  container.innerHTML = "";
+  variants.forEach((v, idx) => {
+    const btn = document.createElement("button");
+    btn.className = "tab-btn" + (idx === activeIdx ? " active" : "");
+    btn.style.padding = "6px 12px";
+    btn.style.fontSize = "13px";
+    btn.textContent = `Variant ${idx + 1}` + (v.status === "FAILED" ? " ⚠️" : "");
+    btn.onclick = () => {
+      onSelect(idx);
+    };
+    container.appendChild(btn);
+  });
+};
+
+window.renderVariantData = function(variant) {
+  if (!variant) return;
+  
+  // Render SVG
+  const svgOut = document.getElementById("run-svg-out");
+  if (variant.json) {
+    if (typeof renderFloorPlanSVG === "function") {
+      svgOut.innerHTML = renderFloorPlanSVG(variant.json);
+    } else {
+      svgOut.innerHTML = `<i>SVG Renderer not found. JSON Data: ${JSON.stringify(variant.json)}</i>`;
+    }
+  } else {
+    svgOut.innerHTML = `<i>No valid layout generated for this variant.</i>`;
+  }
+
+  // Render Text Report
+  const textOut = document.getElementById("run-out");
+  textOut.textContent = variant.textReport || "Text Report not generated yet.";
+
+  // Render Images
+  runImgGrid.innerHTML = "";
+  if (variant.images && variant.images.length > 0) {
+    document.querySelector("[data-target='tab-imgs']").textContent = `🖼️ Images (${variant.images.length})`;
+    variant.images.forEach((imgObj, idx) => {
+      renderRunImage(idx, imgObj.url, imgObj.prompt, imgObj.error, imgObj.errorMsg);
+    });
+  } else {
+    document.querySelector("[data-target='tab-imgs']").textContent = `🖼️ Images (0)`;
+    runImgGrid.innerHTML = `<div style="color:var(--mu); font-size: 13px; padding: 30px; text-align:center; grid-column: 1/-1;">Images will appear here once generated.</div>`;
+  }
+};
+
 window.renderRunImage = function(imgId, url, prompt, isError, errorMsg) {
   const ph = runImgGrid.querySelector("div");
   if (ph && ph.style.gridColumn === "1 / -1") ph.remove();
@@ -484,7 +538,7 @@ window.renderRunImage = function(imgId, url, prompt, isError, errorMsg) {
     card.innerHTML = `
       <div style="color:var(--er); font-size:12px; font-weight:bold;">❌ Failed to generate</div>
       <div style="font-size:12px; color:var(--mu);">${esc(errorMsg || "Unknown error")}</div>
-      <div style="font-size:11px; color:var(--mu); max-height:40px; overflow:hidden;">Prompt: ${esc(prompt)}</div>
+      <div id="img-prompt-${imgId}" style="font-size:11px; color:var(--mu); max-height:40px; overflow:hidden;" data-prompt="${esc(prompt)}">Prompt: ${esc(prompt)}</div>
       <button class="p" style="font-size:12px; padding:6px;" onclick="retryImage('${imgId}')">🔄 Retry this image</button>
     `;
   } else {
@@ -504,9 +558,26 @@ window.showFatalApiError = function(code, message) {
   alert(errMsg);
 };
 
-window.retryImage = function(imgId) {
-  console.log("Retry image", imgId);
-  // To be implemented in Part 5
+window.retryImage = async function(imgId) {
+  const promptEl = document.getElementById(`img-prompt-${imgId}`);
+  if (!promptEl) return;
+  
+  // Unescape the prompt stored in data attribute
+  const txt = document.createElement('textarea');
+  txt.innerHTML = promptEl.dataset.prompt;
+  const prompt = txt.value;
+  
+  if (!prompt || !sample.runImg) return;
+  
+  updateRunStatus(`Retrying image ${imgId}...`, 0);
+  try {
+      const res = await sample.runImg(prompt, { signal: runCtl ? runCtl.signal : undefined });
+      renderRunImage(imgId, res.text, prompt, false);
+      updateRunStatus("Image retry successful.", 0);
+  } catch (e) {
+      renderRunImage(imgId, null, prompt, true, e.message || "Failed to generate");
+      updateRunStatus(`Image retry failed: ${e.message}`, 0);
+  }
 };
 
 // Main Layout Tab Switching
